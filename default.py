@@ -16,7 +16,7 @@ class MyHandler(BaseHTTPRequestHandler):
                 if line.startswith('plugin://'):
                     # URL encode the plugin URL and replace it with the new URL
                     encoded_line = quote(line, safe='')
-                    new_url = f'http://192.168.2.9?link={encoded_line}'
+                    new_url = f'http://192.168.2.9:9191/play?link={encoded_line}'
                     new_lines.append(new_url)
                 else:
                     new_lines.append(line)
