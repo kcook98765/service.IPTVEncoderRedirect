@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon
+    id="service.IPTVEncoderRedirect"
+    name="IPTV_proxy"
+    version="1.0.0"
+    provider-name="kcook98765">
+    <requires>
+        <import addon="xbmc.python" version="3.0.0"/>
+    </requires>
+    <extension 
+        point="xbmc.service"
+        library="default.py"
+        start="login">
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary>Use kodi with IPTV Merge and a video encoder to access streams outside kodi</summary>
+        <description>Your Addon Description</description>
+        <platform>all</platform>
+    </extension>
+</addon>
