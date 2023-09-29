@@ -1,3 +1,4 @@
+import xbmc
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import urlopen, Request
@@ -31,7 +32,7 @@ class MyHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(new_content.encode())
             except URLError as e:
-                print(f"An error occurred: {e}")
+                xbmc.log(f"An error occurred: {e}")
                 self.send_response(500)
                 self.end_headers()
 
@@ -44,18 +45,15 @@ class MyHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(content)
             except URLError as e:
-                print(f"An error occurred: {e}")
+                xbmc.log(f"An error occurred: {e}")
                 self.send_response(500)
                 self.end_headers()
 
         elif path == '/play':
             query_params = parse_qs(parsed_path.query)
-            link = query_params.get('link', [''])[0]  
-            print(f"Link is: {link}")  
-            
-            kodi_url = 'http://localhost:8080/jsonrpc'
-            headers = {'Content-type': 'application/json'}
-            data = {
+            link = query_params.get('link', [''])[0]
+            xbmc.log(f"Link is: {link}")  
+            command = json.dumps({
                 "jsonrpc": "2.0",
                 "method": "Player.Open",
                 "params": {
@@ -64,14 +62,13 @@ class MyHandler(BaseHTTPRequestHandler):
                     }
                 },
                 "id": 1
-            }
-            req = Request(kodi_url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
-            try:
-                response = urlopen(req)
-                response_content = response.read().decode('utf-8')
-                print(f"Kodi JSON-RPC response: {response_content}")
-            except URLError as e:
-                print(f"An error occurred: {e}")
+            })
+            response = xbmc.executeJSONRPC(command)
+            response_json = json.loads(response)
+            if 'error' in response_json:
+                xbmc.log(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
+            else:
+                xbmc.log(f"Kodi JSON-RPC response: {response}")
 
             # Sending a 302 redirect response
             redirect_url = 'http://192.168.2.168/0.ts'
