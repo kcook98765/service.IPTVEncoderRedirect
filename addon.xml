@@ -17,4 +17,5 @@
         <description>Your Addon Description</description>
         <platform>all</platform>
     </extension>
+    <extension point="xbmc.addon.settings" library="resources/settings.xml"/>
 </addon>
