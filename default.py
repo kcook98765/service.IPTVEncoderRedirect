@@ -169,7 +169,7 @@ class MyHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(new_content.encode())
             except Exception as e:
-            self.handle_error(e, "Internal server error")
+                self.handle_error(e, "Internal server error")
 
 
         elif path == '/epg.xml':
