@@ -119,7 +119,7 @@ class TelnetPoller:
             disconnected_clients = previous_addresses - current_addresses
 
             # Handle new and disconnected clients here
-            for client in new_clients:
+#            for client in new_clients:
                 # Record this new client
                 # ... [Your logic to handle new client]
 
