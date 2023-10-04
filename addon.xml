@@ -2,7 +2,7 @@
 <addon
     id="service.IPTVEncoderRedirect"
     name="IPTV_proxy"
-    version="0.0.1"
+    version="0.0.2"
     provider-name="kcook98765">
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
@@ -17,5 +17,4 @@
         <description>Your Addon Description</description>
         <platform>all</platform>
     </extension>
-    <extension point="xbmc.addon.settings" library="resources/settings.xml"/>
 </addon>
