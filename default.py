@@ -1,5 +1,5 @@
-import xbmc, xbmcaddon, xbmcvfs
-import os, json, time, threading, datetime
+import xbmc, xbmcaddon, xbmcvfs, xbmcgui
+import os, json, time, threading, datetime, socket
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import urlopen, Request
@@ -20,23 +20,71 @@ last_accessed_links_lock = threading.Lock()
 # master_ip = ADDON.getSetting('master_ip')
 # master_encoder_url = ADDON.getSetting('master_encoder_url')
 
+assigned_ports = []
+
+def find_available_port(start_port, end_port):
+    for port in range(start_port, end_port + 1):
+        if port not in assigned_ports:
+            if is_port_available(port):
+                assigned_ports.append(port)
+                return port
+    return None
+
+def is_port_available(port):
+    # Check if a given port is available
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            s.bind(("localhost", port))
+            return True
+    except (socket.error, OSError):
+        return False
+
 def initialize_kodi_boxes():
-    return [
-        {
+    start_port = 49152  # Start of dynamic/private port range
+    end_port = 65535    # End of dynamic/private port range
+    kodi_boxes = []
+
+    # Master Kodi instance
+    master_proxy_port = find_available_port(start_port, end_port)
+    if master_proxy_port is None:
+        log_message("No available port found for Master Kodi proxy.", level=xbmc.LOGERROR)
+    else:
+        kodi_boxes.append({
             "Actor": "Master",
             "IP": xbmc.getIPAddress(),
             "Encoder_URL": 'http://192.168.2.168/0.ts',
             "Status": "IDLE",
-            "Proxy_Port": 9192
-        },
+            "Proxy_Port": master_proxy_port,
+            "Server_Port": ADDON.getSetting('master_server_port'),  # Update with your master server port setting
+        })
+
+    # Slave Kodi instance(s)
+    slave_settings = [
         {
-            "Actor": "Slave",
-            "IP": ADDON.getSetting('slave_1_ip'),
-            "Encoder_URL": ADDON.getSetting('slave_1_encoder_url'),
-            "Status": "IDLE",
-            "Proxy_Port": 9193
-        }
+            "ip_setting": "slave_1_ip",
+            "encoder_url_setting": "slave_1_encoder_url"
+        },
+        # Add more slave settings as needed
     ]
+
+    for i, settings in enumerate(slave_settings, start=1):
+        ip_setting = settings["ip_setting"]
+        encoder_url_setting = settings["encoder_url_setting"]
+        
+        slave_proxy_port = find_available_port(start_port, end_port)
+        if slave_proxy_port is None:
+            log_message(f"No available port found for Slave {i} Kodi proxy.", level=xbmc.LOGERROR)
+        else:
+            kodi_boxes.append({
+                "Actor": f"Slave {i}",
+                "IP": ADDON.getSetting(ip_setting),
+                "Encoder_URL": ADDON.getSetting(encoder_url_setting),
+                "Status": "IDLE",
+                "Proxy_Port": slave_proxy_port,
+            })
+
+    return kodi_boxes
 
 KODI_BOXES = initialize_kodi_boxes()
 
@@ -327,7 +375,7 @@ class MyHandler(BaseHTTPRequestHandler):
         for line in lines:
             if line.startswith('plugin://'):
                 encoded_line = quote(line, safe='')
-                new_url = f"http://{master_box['IP']}:{master_box['Proxy_Port']}/proxy?link={encoded_line}"
+                new_url = f"http://{master_box['IP']}:{master_box['Server_Port']}/proxy?link={encoded_line}"
                 new_lines.append(new_url)
             else:
                 new_lines.append(line)
@@ -384,8 +432,14 @@ def run():
         log_message("Starting server...")
         
         # Main server (synchronous)
-        log_message(f"Starting main server on port {server_port}...")
-        server_address = ('', server_port)
+        master_box = get_master_kodi_box()
+        if not master_box:
+            xbmcgui.Dialog().ok("Error", "Master Kodi settings not found. Addon will be disabled.")
+            xbmcaddon.Addon().setSetting("enabled", "false")  # Disable the addon
+            return
+        
+        log_message(f"Starting main server on IP {master_box['IP']} , port {master_box['Server_Port']}...")
+        server_address = (master_box['IP'], master_box['Server_Port'])
         main_httpd = HTTPServer(server_address, MyHandler)
 
         # Create a dictionary to hold proxy servers for each KODI_BOX
