@@ -95,25 +95,6 @@ def stop_kodi_playback(kodi_ip):
     }
     send_jsonrpc(payload, f"http://{kodi_ip}:8080/jsonrpc")
 
-def get_encoder_url_for_link(link):
-    rows = query_database(
-        'SELECT IP FROM active_streams WHERE link = ? AND status = "Active"',
-        (link,)
-    )
-    if rows:
-        for kodi_box in KODI_BOXES:
-            if kodi_box['IP'] == rows[0][0]:
-                return kodi_box['Encoder_URL']
-    return None
 
-def get_available_kodi_box():
-    rows = query_database(
-        'SELECT IP FROM active_streams WHERE status = "Inactive"'
-    )
-    if rows:
-        for kodi_box in KODI_BOXES:
-            if kodi_box['IP'] == rows[0][0]:
-                return kodi_box
-    return None
 
 
