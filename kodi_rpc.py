@@ -5,6 +5,7 @@ import xbmc
 import xbmcaddon
 import xbmcvfs
 import os
+import time
 
 ADDON = xbmcaddon.Addon()
 ADDON_PATH = ADDON.getAddonInfo("path")
