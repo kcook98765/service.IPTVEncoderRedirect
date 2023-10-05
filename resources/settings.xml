@@ -1,31 +1,16 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
 <settings>
-    <section id="service.IPTVEncoderRedirect">
-        <!-- Master Configuration -->
-        <category id="master" label="Master">
-            <setting id="master_ip" type="text" label="Master IP" default="0.0.0.0" help="Enter the IP address of the master Kodi server." />
-            
-            <setting id="master_encoder_url" type="text" label="Master Encoder URL" default="http://example.com" help="Provide the streaming URL for the associated master encoder." />
-            
-            <setting id="server_port" type="numeric" label="Server Port" default="9191" help="Specify the port number for this main server addon." />
-        </category>
-        
-        <!-- Slave Configurations -->
-        <category id="slaves" label="Slaves">
-            <!-- Slave 1 -->
-            <setting id="slave_1_ip" type="text" label="Slave 1 IP" default="0.0.0.0" help="Enter the IP address of the first slave Kodi server." />
-
-            <setting id="slave_1_encoder_url" type="text" label="Slave 1 Encoder URL" default="http://example.com" help="Provide the streaming URL for the first associated slave encoder." />
-            
-            <!-- Slave 2 -->
-            <setting id="slave_2_ip" type="text" label="Slave 2 IP" default="0.0.0.0" help="Enter the IP address of the second slave Kodi server." />
-
-            <setting id="slave_2_encoder_url" type="text" label="Slave 2 Encoder URL" default="http://example.com" help="Provide the streaming URL for the second associated slave encoder." />
-            
-            <!-- Slave 3 -->
-            <setting id="slave_3_ip" type="text" label="Slave 3 IP" default="0.0.0.0" help="Enter the IP address of the third slave Kodi server." />
-
-            <setting id="slave_3_encoder_url" type="text" label="Slave 3 Encoder URL" default="http://example.com" help="Provide the streaming URL for the third associated slave encoder." />
-        </category>
-    </section>
+    <category label="Master" id="master">
+        <setting id="master_ip" type="text" label="Master IP" default="0.0.0.0" help="Enter the IP address of the master Kodi server." />
+        <setting id="master_encoder_url" type="text" label="Master Encoder URL" default="http://example.com" help="Provide the streaming URL for the associated master encoder." />
+        <setting id="server_port" type="numeric" label="Server Port" default="9191" help="Specify the port number for this main server addon." />
+    </category>
+    <category label="Slaves" id="slaves">
+        <setting id="slave_1_ip" type="text" label="Slave 1 IP" default="0.0.0.0" help="Enter the IP address of the first slave Kodi server." />
+        <setting id="slave_1_encoder_url" type="text" label="Slave 1 Encoder URL" default="http://example.com" help="Provide the streaming URL for the first associated slave encoder." />
+        <setting id="slave_2_ip" type="text" label="Slave 2 IP" default="0.0.0.0" help="Enter the IP address of the second slave Kodi server." />
+        <setting id="slave_2_encoder_url" type="text" label="Slave 2 Encoder URL" default="http://example.com" help="Provide the streaming URL for the second associated slave encoder." />
+        <setting id="slave_3_ip" type="text" label="Slave 3 IP" default="0.0.0.0" help="Enter the IP address of the third slave Kodi server." />
+        <setting id="slave_3_encoder_url" type="text" label="Slave 3 Encoder URL" default="http://example.com" help="Provide the streaming URL for the third associated slave encoder." />
+    </category>
 </settings>
