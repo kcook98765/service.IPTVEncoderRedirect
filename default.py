@@ -42,7 +42,8 @@ DATABASE_NAME = xbmcvfs.translatePath(os.path.join(profilePath, 'IPTVEncoderRedi
 # Read Master settings
 master_ip = ADDON.getSetting('master_ip')
 master_encoder_url = ADDON.getSetting('master_encoder_url')
-server_port = int(ADDON.getSetting('server_port'))
+server_port_setting = ADDON.getSetting('server_port')
+server_port = int(server_port_setting) if server_port_setting else 9191
 
 # Read Slave settings
 slave_1_ip = ADDON.getSetting('slave_1_ip')
