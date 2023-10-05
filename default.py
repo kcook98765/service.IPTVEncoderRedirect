@@ -21,21 +21,6 @@ ADDON_PATH = ADDON.getAddonInfo("path")
 ADDON_NAME = ADDON.getAddonInfo("name")
 ADDON_ID = ADDON.getAddonInfo("id")
 
-
-from database_helper import (
-    create_database, populate_kodi_boxes, query_database, 
-    modify_database, store_address, store_link,
-    insert_into_active_streams, update_active_stream_status,
-    truncate_addresses_table
-)
-
-from kodi_rpc import (
-    send_jsonrpc, stop_kodi_playback, get_encoder_url_for_link, 
-    get_available_kodi_box
-)
-
-
-
 # Read Master settings
 master_ip = ADDON.getSetting('master_ip')
 master_encoder_url = ADDON.getSetting('master_encoder_url')
@@ -74,6 +59,21 @@ KODI_BOXES = [
         "Encoder_URL": slave_3_encoder_url
     }
 ]
+
+
+from database_helper import (
+    create_database, populate_kodi_boxes, query_database, 
+    modify_database, store_address, store_link,
+    insert_into_active_streams, update_active_stream_status,
+    truncate_addresses_table
+)
+
+from kodi_rpc import (
+    send_jsonrpc, stop_kodi_playback, get_encoder_url_for_link, 
+    get_available_kodi_box
+)
+
+
 
 play_request_lock = threading.Lock()
 active_proxies = {}  # Dictionary to maintain active proxies per link
