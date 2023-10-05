@@ -22,8 +22,11 @@ ADDON_NAME = ADDON.getAddonInfo("name")
 ADDON_ID = ADDON.getAddonInfo("id")
 
 # Read Master settings
-master_ip = ADDON.getSetting('master_ip')
-master_encoder_url = ADDON.getSetting('master_encoder_url')
+# master_ip = ADDON.getSetting('master_ip')
+# master_encoder_url = ADDON.getSetting('master_encoder_url')
+
+master_ip = '192.168.2.9'
+master_encoder_url = 'http://192.168.2.168/0.ts'
 server_port_setting = ADDON.getSetting('server_port')
 server_port = int(server_port_setting) if server_port_setting else 9191
 
