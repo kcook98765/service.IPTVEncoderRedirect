@@ -1,11 +1,12 @@
 import xbmc
 import xbmcaddon
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import xbmcvfs
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
+from concurrent.futures import ThreadPoolExecutor
 import json  # import the json module
-import telnetlib
 import time
 import threading
 import sqlite3
@@ -19,26 +20,38 @@ from database_helper import (
 
 from kodi_rpc import (
     send_jsonrpc, stop_kodi_playback, get_encoder_url_for_link, 
-    get_available_kodi_box, KODI_BOXES
+    get_available_kodi_box
 )
 
-# Get the add-on's settings
-addon = xbmcaddon.Addon()
+ENABLE_LOGGING = True # FALSE to shut off
+
+ADDON = xbmcaddon.Addon()
+ADDON_PATH = ADDON.getAddonInfo("path")
+ADDON_NAME = ADDON.getAddonInfo("name")
+ADDON_ID = ADDON.getAddonInfo("id")
+
+profilePath = xbmcvfs.translatePath( ADDON.getAddonInfo('profile') )
+if not os.path.exists(profilePath):
+    os.makedirs(profilePath)
+
+DATABASE_NAME = xbmcvfs.translatePath(os.path.join(profilePath, 'IPTVEncoderRedirect_data.db'))
+
+
 
 # Read Master settings
-master_ip = addon.getSetting('master_ip')
-master_encoder_url = addon.getSetting('master_encoder_url')
-server_port = addon.getSetting('server_port')
+master_ip = ADDON.getSetting('master_ip')
+master_encoder_url = ADDON.getSetting('master_encoder_url')
+server_port = int(ADDON.getSetting('server_port'))
 
 # Read Slave settings
-slave_1_ip = addon.getSetting('slave_1_ip')
-slave_1_encoder_url = addon.getSetting('slave_1_encoder_url')
+slave_1_ip = ADDON.getSetting('slave_1_ip')
+slave_1_encoder_url = ADDON.getSetting('slave_1_encoder_url')
 
-slave_2_ip = addon.getSetting('slave_2_ip')
-slave_2_encoder_url = addon.getSetting('slave_2_encoder_url')
+slave_2_ip = ADDON.getSetting('slave_2_ip')
+slave_2_encoder_url = ADDON.getSetting('slave_2_encoder_url')
 
-slave_3_ip = addon.getSetting('slave_3_ip')
-slave_3_encoder_url = addon.getSetting('slave_3_encoder_url')
+slave_3_ip = ADDON.getSetting('slave_3_ip')
+slave_3_encoder_url = ADDON.getSetting('slave_3_encoder_url')
 
 KODI_BOXES = [
     {
@@ -64,80 +77,95 @@ KODI_BOXES = [
 ]
 
 play_request_lock = threading.Lock()
+active_proxies = {}  # Dictionary to maintain active proxies per link
+proxy_clients = {}  # Dictionary to maintain active clients for each proxy
 
+def log_message(message, level=xbmc.LOGDEBUG):
+    if ENABLE_LOGGING or level == xbmc.LOGERROR:
+        xbmc.log(message, level=level)
 
-class TelnetPoller:
-    def __init__(self, host, username, password, command, poll_interval):
-        self.host = host
-        self.username = username
-        self.password = password
-        self.command = command
-        self.poll_interval = poll_interval
-        self.tn = None
+class ProxyHandler(BaseHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        self.encoder_connection = None
+        self.associated_kodi = None
+        super().__init__(*args, **kwargs)
 
-    def connect(self):
+    def handle_proxy_request(self, link):
+        global proxy_clients
+        
+        log_message("Handling proxy request for link: {}".format(link))
+
         try:
-            self.tn = telnetlib.Telnet(self.host)
-            self.tn.read_until(b"login: ")
-            self.tn.write(self.username.encode('ascii') + b"\n")
-            self.tn.read_until(b"Password: ")
-            self.tn.write(self.password.encode('ascii') + b"\n")
+            # Get encoder URL based on link (or however you want to fetch it)
+            encoder_url = get_encoder_url_for_link(link)
+            log_message(f"Encoder URL fetched for link: {link} is {encoder_url}")
+
+            # Open a connection to the encoder
+            self.encoder_connection = urlopen(encoder_url)
+            log_message(f"Connection established to encoder: {encoder_url}")
+
+            # While we're reading data from the encoder, write to client
+            chunk = self.encoder_connection.read(4096)
+            while chunk:
+                self.wfile.write(chunk)
+                chunk = self.encoder_connection.read(4096)
+
         except Exception as e:
-            xbmc.log(f"Telnet connection error: {e}", level=xbmc.LOGERROR)
+            log_message(f"Proxy error for link {link}: {e}", level=xbmc.LOGERROR)
 
+        finally:
+            if self.encoder_connection:
+                self.encoder_connection.close()
+                log_message("Encoder connection closed.")
 
-    def poll_netstat(self):
-        try:
-            truncate_addresses_table()  # Truncate the table before updating
-            self.tn.write(self.command.encode('ascii') + b"\n")
-            output = self.tn.read_until(b"$").decode('ascii')
-            for line in output.split('\n')[2:]:
-                parts = line.split()
-                if len(parts) < 6:
-                    continue
-                local_address, foreign_address, state = parts[3], parts[4], parts[5]
-                if 'telnet' in local_address:
-                    continue
-                if state in {'ESTABLISHED', 'SYN_SENT', 'SYN_RECV'}:
-                    store_address(foreign_address, time.strftime("%Y-%m-%d %H:%M:%S"))
-        except Exception as e:
-            xbmc.log(f"Telnet polling error: {e}", level=xbmc.LOGERROR)
-            self.connect()  # Attempt to reconnect
+    def finish(self):
+        # Client disconnection is handled here
+        global proxy_clients
 
-    def start_polling(self):
-        self.connect()
-        previous_addresses = set()  # Set to track previous clients
-
-        while True:
-            self.poll_netstat()
+        if self.associated_kodi and self.client_address in proxy_clients.get(self.associated_kodi, set()):
+            proxy_clients[self.associated_kodi].remove(self.client_address)
             
-            # Fetch all the current addresses from the database
-            rows = query_database('SELECT foreign_address FROM addresses')
-            current_addresses = set(row[0] for row in rows)
+            if not proxy_clients[self.associated_kodi]:
+                stop_kodi_playback(self.associated_kodi)
 
-            new_clients = current_addresses - previous_addresses
-            disconnected_clients = previous_addresses - current_addresses
+        super().finish()
 
-            # Handle new and disconnected clients here
-#            for client in new_clients:
-                # Record this new client
-                # ... [Your logic to handle new client]
+    def do_GET(self):
+        global active_proxies, proxy_clients
 
-            for client in disconnected_clients:
-                # Check if there are no clients connected to the Kodi instance and send "Stop" command
-                associated_kodi_ip = get_kodi_for_client(client)  # This method should return the Kodi IP associated with a client
-                if not any([client for client in current_addresses if associated_kodi_ip == get_kodi_for_client(client)]):
-                    stop_kodi_playback(associated_kodi_ip)
+        parsed_path = urlparse(self.path)
+        if parsed_path.path == '/proxy':
+            link = parse_qs(parsed_path.query).get('link', [''])[0]
 
-            previous_addresses = current_addresses
+            # Check if an active proxy exists for this link
+            if link not in active_proxies:
+                encoder_url = get_encoder_url_for_link(link)
+                active_proxies[link] = {
+                    'encoder_connection': urlopen(encoder_url),
+                    'clients': set()  # Maintain clients for this link
+                }
 
-            time.sleep(self.poll_interval)
+            active_proxies[link]['clients'].add(self)
 
+            try:
+                # Distribute data from the encoder to the client
+                while True:
+                    chunk = active_proxies[link]['encoder_connection'].read(4096)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+
+            except Exception as e:
+                # Handle client disconnect or other errors
+                active_proxies[link]['clients'].remove(self)
+                if not active_proxies[link]['clients']:
+                    active_proxies[link]['encoder_connection'].close()
+                    del active_proxies[link]
 
 class MyHandler(BaseHTTPRequestHandler):
 
     def handle_error(self, e, error_message=None):
-        xbmc.log(f"HTTP request handling error: {e}", level=xbmc.LOGERROR)
+        log_message(f"HTTP request handling error: {e}", level=xbmc.LOGERROR)
         self.send_response(500)
         self.send_header('Content-Type', 'text/plain')
         self.end_headers()
@@ -149,6 +177,7 @@ class MyHandler(BaseHTTPRequestHandler):
         path = parsed_path.path
 
         if path == '/playlist.m3u8':
+            log_message("Received request for playlist.")
             try:
                 response = urlopen('http://localhost:52104/playlist.m3u8')
                 content = response.read().decode('utf-8')  # assuming the content is UTF-8 encoded
@@ -173,6 +202,7 @@ class MyHandler(BaseHTTPRequestHandler):
 
 
         elif path == '/epg.xml':
+            log_message("Received request for EPG.")
             try:
                 response = urlopen('http://localhost:52104/epg.xml')
                 content = response.read()  # read the content as bytes
@@ -186,6 +216,7 @@ class MyHandler(BaseHTTPRequestHandler):
                 self.end_headers()
 
         elif path == '/play':
+            log_message("Received play request.")
             with play_request_lock:
                 query_params = parse_qs(parsed_path.query)
                 link = query_params.get('link', [''])[0]
@@ -197,8 +228,10 @@ class MyHandler(BaseHTTPRequestHandler):
                 encoder_url = get_encoder_url_for_link(link)
                 if encoder_url:
                     # Redirect to the encoder URL
+                    # Redirect the caller to the proxy, not the encoder
+                    proxy_url = f"http://{master_ip}:{server_port + 1}/proxy?link={quote(link)}"
                     self.send_response(302)
-                    self.send_header('Location', encoder_url)
+                    self.send_header('Location', proxy_url)
                     self.end_headers()
                 else:
                     # Find an available Kodi box
@@ -238,37 +271,51 @@ class MyHandler(BaseHTTPRequestHandler):
                 rows = query_database('SELECT timestamp FROM links WHERE link = ?', (link,))
                 if rows:
                     timestamp_str = rows[0][0]
-                    timestamp = time.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-                    current_time = time.time()
-                    duration = current_time - time.mktime(timestamp)
-    
-                    if duration > (4 * 60 * 60):  # 4 hours in seconds
-                        associated_kodi_ip = get_kodi_for_link(link)  # This method should return the Kodi IP associated with a link
-                        stop_kodi_playback(associated_kodi_ip)
+                    try:
+                        timestamp = time.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+                        current_time = time.time()
+                        duration = current_time - time.mktime(timestamp)
+                
+                        if duration > (4 * 60 * 60):  # 4 hours in seconds
+                            associated_kodi_ip = get_kodi_for_link(link)  # This method should return the Kodi IP associated with a link
+                            stop_kodi_playback(associated_kodi_ip)
+                    except ValueError:
+                        log_message(f"Error parsing timestamp: {timestamp_str} for link: {link}", level=xbmc.LOGERROR)
+
+MAX_WORKERS = 10  # Adjust this based on the maximum number of simultaneous threads you expect
 
 def run():
     try:
-        create_database()  # Create database at the start of the application
-        populate_kodi_boxes()  # Populate kodi_boxes table at the start of the application
-    
-        poller = TelnetPoller(
-            host="your_host",
-            username="your_username",
-            password="your_password",
-            command="netstat -t",
-            poll_interval=300  # 5 minutes in seconds
-        )
-        polling_thread = threading.Thread(target=poller.start_polling)
-        polling_thread.daemon = True
-        polling_thread.start()
-    
+        log_message("Starting server...")
+        log_message("Creating database...")
+        create_database()
+        log_message("Populating Kodi boxes...")
+        populate_kodi_boxes()
+        
+        # Main server (synchronous)
+        log_message(f"Starting main server on port {server_port}...")
         server_address = ('', server_port)
-        httpd = HTTPServer(server_address, MyHandler)
-        httpd.serve_forever()
+        main_httpd = HTTPServer(server_address, MyHandler)  # Just HTTPServer for synchronous behavior
+
+        # Proxy server (asynchronous to handle multiple clients)
+        log_message(f"Starting proxy server on port {server_port + 1}...")
+        proxy_address = ('', server_port + 1)  # Assuming the proxy runs on the next port
+        proxy_httpd = ThreadingHTTPServer(proxy_address, ProxyHandler)
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            main_future = executor.submit(main_httpd.serve_forever)
+            proxy_future = executor.submit(proxy_httpd.serve_forever)
+            
+            log_message("Both servers are now running.")
+
+            # Wait for both servers to complete. In practice, these servers run forever unless an exception occurs.
+            main_future.result()
+            proxy_future.result()
+
     except Exception as e:
-        xbmc.log(f"Main execution error: {e}", level=xbmc.LOGERROR)
-
-
+        log_message(f"Main execution error: {e}", level=xbmc.LOGERROR)
 
 if __name__ == '__main__':
+    log_message("Starting application...")
     run()
+    log_message("Application terminated.")

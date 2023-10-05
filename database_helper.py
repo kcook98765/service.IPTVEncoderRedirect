@@ -1,7 +1,6 @@
 import sqlite3
 import xbmc
 
-DATABASE_NAME = 'kodi_data.db'
 
 def create_database():
     conn = sqlite3.connect(DATABASE_NAME)
