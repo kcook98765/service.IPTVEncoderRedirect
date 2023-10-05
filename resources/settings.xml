@@ -1,16 +1,53 @@
-<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
-<settings>
-    <category label="Master" id="master">
-        <setting id="master_ip" type="text" label="Master IP" default="0.0.0.0" help="Enter the IP address of the master Kodi server." />
-        <setting id="master_encoder_url" type="text" label="Master Encoder URL" default="http://example.com" help="Provide the streaming URL for the associated master encoder." />
-        <setting id="server_port" type="numeric" label="Server Port" default="9191" help="Specify the port number for this main server addon." />
-    </category>
-    <category label="Slaves" id="slaves">
-        <setting id="slave_1_ip" type="text" label="Slave 1 IP" default="0.0.0.0" help="Enter the IP address of the first slave Kodi server." />
-        <setting id="slave_1_encoder_url" type="text" label="Slave 1 Encoder URL" default="http://example.com" help="Provide the streaming URL for the first associated slave encoder." />
-        <setting id="slave_2_ip" type="text" label="Slave 2 IP" default="0.0.0.0" help="Enter the IP address of the second slave Kodi server." />
-        <setting id="slave_2_encoder_url" type="text" label="Slave 2 Encoder URL" default="http://example.com" help="Provide the streaming URL for the second associated slave encoder." />
-        <setting id="slave_3_ip" type="text" label="Slave 3 IP" default="0.0.0.0" help="Enter the IP address of the third slave Kodi server." />
-        <setting id="slave_3_encoder_url" type="text" label="Slave 3 Encoder URL" default="http://example.com" help="Provide the streaming URL for the third associated slave encoder." />
-    </category>
+<?xml version="1.0" encoding="utf-8"?>
+<settings version="1">
+    <section id="service.IPTVEncoderRedirect">
+        <!-- Master Configuration -->
+        <category id="master" label="Master" level="1">
+            <setting help="Enter the IP address of the master Kodi server." id="master_ip" label="Master IP" type="text" default="0.0.0.0">
+                <level>0</level>
+                <control type="textbox" />
+            </setting>
+            <setting help="Provide the streaming URL for the associated master encoder." id="master_encoder_url" label="Master Encoder URL" type="text" default="http://example.com/0.ts">
+                <level>1</level>
+                <control type="textbox" />
+            </setting>
+            <setting help="Specify the port number for this main server addon." id="server_port" label="Server Port" type="integer" default="9191">
+                <level>2</level>
+                <control type="edit" format="integer" />
+            </setting>
+        </category>
+
+        <!-- Slave Configurations -->
+        <category id="slaves" label="Slaves" level="1">
+            <!-- Slave 1 -->
+            <setting help="Enter the IP address of the first slave Kodi server." id="slave_1_ip" label="Slave 1 IP" type="text" default="0.0.0.0">
+                <level>0</level>
+                <control type="textbox" />
+            </setting>
+            <setting help="Provide the streaming URL for the first associated slave encoder." id="slave_1_encoder_url" label="Slave 1 Encoder URL" type="text" default="http://example.com/1.ts">
+                <level>1</level>
+                <control type="textbox" />
+            </setting>
+
+            <!-- Slave 2 -->
+            <setting help="Enter the IP address of the second slave Kodi server." id="slave_2_ip" label="Slave 2 IP" type="text" default="0.0.0.0">
+                <level>0</level>
+                <control type="textbox" />
+            </setting>
+            <setting help="Provide the streaming URL for the second associated slave encoder." id="slave_2_encoder_url" label="Slave 2 Encoder URL" type="text" default="http://example.com/2.ts">
+                <level>1</level>
+                <control type="textbox" />
+            </setting>
+
+            <!-- Slave 3 -->
+            <setting help="Enter the IP address of the third slave Kodi server." id="slave_3_ip" label="Slave 3 IP" type="text" default="0.0.0.0">
+                <level>0</level>
+                <control type="textbox" />
+            </setting>
+            <setting help="Provide the streaming URL for the third associated slave encoder." id="slave_3_encoder_url" label="Slave 3 Encoder URL" type="text" default="http://example.com/3.ts">
+                <level>1</level>
+                <control type="textbox" />
+            </setting>
+        </category>
+    </section>
 </settings>
