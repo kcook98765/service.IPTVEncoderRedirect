@@ -10,16 +10,20 @@ from concurrent.futures import ThreadPoolExecutor
 import json  # import the json module
 import time
 import threading
-import sqlite3
-
-
+import datetime
 
 ENABLE_LOGGING = True # FALSE to shut off
 
+# Constants
+CLEANUP_INTERVAL_SECONDS = 3600  # This will check for cleanup every hour. Adjust as needed.
+MAX_LINK_IDLE_TIME_SECONDS = 3600 * 1  # Remove links that have been idle for 1 hour.
+
+# Add an additional dictionary to track the last access time of each link.
+last_accessed_links = {}
+last_accessed_links_lock = threading.Lock()
+
+
 ADDON = xbmcaddon.Addon()
-ADDON_PATH = ADDON.getAddonInfo("path")
-ADDON_NAME = ADDON.getAddonInfo("name")
-ADDON_ID = ADDON.getAddonInfo("id")
 
 # Read Master settings
 # master_ip = ADDON.getSetting('master_ip')
@@ -44,56 +48,139 @@ KODI_BOXES = [
     {
         "Actor": "Master",
         "IP": master_ip,
-        "Encoder_URL": master_encoder_url
+        "Encoder_URL": master_encoder_url,
+        "Status": "IDLE"
     },
     {
         "Actor": "Slave",
         "IP": slave_1_ip,
-        "Encoder_URL": slave_1_encoder_url
+        "Encoder_URL": slave_1_encoder_url,
+        "Status": "IDLE"
     },
     {
         "Actor": "Slave",
         "IP": slave_2_ip,
-        "Encoder_URL": slave_2_encoder_url
+        "Encoder_URL": slave_2_encoder_url,
+        "Status": "IDLE"
     },
     {
         "Actor": "Slave",
         "IP": slave_3_ip,
-        "Encoder_URL": slave_3_encoder_url
+        "Encoder_URL": slave_3_encoder_url,
+        "Status": "IDLE"
     }
 ]
 
-from database_helper import (
-    DATABASE_NAME, create_database, populate_kodi_boxes, query_database, 
-    modify_database, store_address, store_link,
-    insert_into_active_streams, update_active_stream_status,
-    truncate_addresses_table, KODI_BOXES
-)
-
-from kodi_rpc import (
-    send_jsonrpc, stop_kodi_playback, get_encoder_url_for_link, 
-    get_available_kodi_box
-)
-
-
-
 play_request_lock = threading.Lock()
+
 active_proxies = {}  # Dictionary to maintain active proxies per link
+active_proxies_lock = threading.Lock()
+
 proxy_clients = {}  # Dictionary to maintain active clients for each proxy
+proxy_clients_lock = threading.Lock()
 
-def delete_database():
-    """Delete the SQLite database file to reset the database."""
-    if xbmcvfs.exists(DATABASE_NAME):
-        xbmcvfs.delete(DATABASE_NAME)
-        xbmc.log(f"Database {DATABASE_NAME} deleted.", level=xbmc.LOGINFO)
-    else:
-        xbmc.log(f"Database {DATABASE_NAME} not found.", level=xbmc.LOGINFO)
-
-
+active_links = {} # link: kodi_box_info
+active_links_lock = threading.Lock()
 
 def log_message(message, level=xbmc.LOGDEBUG):
     if ENABLE_LOGGING or level == xbmc.LOGERROR:
         xbmc.log(message, level=level)
+
+def get_available_kodi_box(link):
+    with active_links_lock:
+        # Return the Kodi box if it's already playing the link
+        if link in active_links:
+            for box in KODI_BOXES:
+                if box["IP"] == active_links[link]:
+                    return box
+        else:
+            # Find an available Kodi box
+            for box in KODI_BOXES:
+                if box["Status"] == "IDLE":
+                    box["Status"] = "PLAYING"  # Mark the box as PLAYING
+                    active_links[link] = box["IP"]
+                    return box
+    return None
+
+
+def start_kodi_playback(kodi_box, link):
+    log_message(f"Starting playback on Kodi box with IP: {kodi_box_ip} for {link}", level=xbmc.LOGDEBUG)
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "Player.Open",
+        "params": {
+            "item": {
+                "file": link
+            }
+        },
+        "id": 1
+    }
+    kodi_url = "local" if kodi_box["Actor"] == "Master" else f"http://{kodi_box['IP']}:8080/jsonrpc"
+    response_json = send_jsonrpc(kodi_url, payload)
+    if response_json and 'error' in response_json:
+        log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
+        # Handle the error, maybe raise an exception or return an error flag.
+
+
+def stop_kodi_playback(kodi_box_ip):
+    # Send a command to stop playback on the specified Kodi box.
+    log_message(f"Stopping playback on Kodi box with IP: {kodi_box_ip}", level=xbmc.LOGDEBUG)
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "Player.Stop",
+        "params": {
+            "playerid": 1
+        },
+        "id": 1
+    }
+    kodi_url = "local" if kodi_box["Actor"] == "Master" else f"http://{kodi_box['IP']}:8080/jsonrpc"
+    response_json = send_jsonrpc(kodi_url, payload)
+    if response_json and 'error' in response_json:
+        log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
+    # After successfully stopping playback, mark the box as IDLE
+    for box in KODI_BOXES:
+        if box["IP"] == kodi_box_ip:
+            box["Status"] = "IDLE"
+            break
+
+def cleanup_stale_entries():
+    global active_proxies, proxy_clients, active_links, last_accessed_links
+    
+    while True:
+        time.sleep(CLEANUP_INTERVAL_SECONDS)
+
+        # Find links that haven't been accessed recently.
+        stale_links = set()
+        current_time = datetime.datetime.now()
+
+        with last_accessed_links_lock:
+            for link, last_access_time in last_accessed_links.items():
+                if (current_time - last_access_time).total_seconds() > MAX_LINK_IDLE_TIME_SECONDS:
+                    stale_links.add(link)
+
+            # Remove the stale links from our tracking
+            for link in stale_links:
+                del last_accessed_links[link]
+
+        # Now, clean up resources associated with stale links
+        with active_proxies_lock:
+            for link in stale_links:
+                if link in active_proxies:
+                    active_proxies[link]['encoder_connection'].close()
+                    del active_proxies[link]
+
+        with proxy_clients_lock:
+            for link in stale_links:
+                if link in proxy_clients:
+                    del proxy_clients[link]
+
+        with active_links_lock:
+            for link in stale_links:
+                if link in active_links:
+                    del active_links[link]
+
+
+
 
 class ProxyHandler(BaseHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -105,6 +192,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
         global proxy_clients
         
         log_message("Handling proxy request for link: {}".format(link))
+        with last_accessed_links_lock:
+            last_accessed_links[link] = datetime.datetime.now()
 
         try:
             # Get encoder URL based on link (or however you want to fetch it)
@@ -131,47 +220,56 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
     def finish(self):
         # Client disconnection is handled here
-        global proxy_clients
-
-        if self.associated_kodi and self.client_address in proxy_clients.get(self.associated_kodi, set()):
-            proxy_clients[self.associated_kodi].remove(self.client_address)
-            
-            if not proxy_clients[self.associated_kodi]:
-                stop_kodi_playback(self.associated_kodi)
-
+        global proxy_clients, active_links
+        with proxy_clients_lock:  # Acquire the lock
+            if self.associated_kodi and self.client_address in proxy_clients.get(self.associated_kodi, set()):
+                proxy_clients[self.associated_kodi].remove(self.client_address)
+                
+                # If no more clients are accessing the proxy for the Kodi box, shut it down and stop playback on the Kodi box.
+                if not proxy_clients[self.associated_kodi]:
+                    stop_kodi_playback(self.associated_kodi)
+                    with active_links_lock:
+                        for link, box_ip in active_links.items():
+                            if box_ip == self.associated_kodi:
+                                del active_links[link]
+                                break
         super().finish()
 
     def do_GET(self):
-        global active_proxies, proxy_clients
-
+        global active_proxies, active_links
         parsed_path = urlparse(self.path)
         if parsed_path.path == '/proxy':
             link = parse_qs(parsed_path.query).get('link', [''])[0]
+            with active_proxies_lock:  # Assuming you've created this lock at the top
+                if link not in active_proxies:
+                    # Initialize this link's proxy info
+                    encoder_url = get_encoder_url_for_link(link)  # Implement this function to get encoder URL for a link
+                    active_proxies[link] = {
+                        'encoder_connection': urlopen(encoder_url),
+                        'clients': set()
+                    }
 
-            # Check if an active proxy exists for this link
-            if link not in active_proxies:
-                encoder_url = get_encoder_url_for_link(link)
-                active_proxies[link] = {
-                    'encoder_connection': urlopen(encoder_url),
-                    'clients': set()  # Maintain clients for this link
-                }
+                # Add current client to this link's clients
+                active_proxies[link]['clients'].add(self.client_address)
 
-            active_proxies[link]['clients'].add(self)
+                try:
+                    # Distribute data from the encoder to the client
+                    while True:
+                        chunk = active_proxies[link]['encoder_connection'].read(4096)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
 
-            try:
-                # Distribute data from the encoder to the client
-                while True:
-                    chunk = active_proxies[link]['encoder_connection'].read(4096)
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
+                except Exception as e:
+                    # Handle client disconnect or other errors
+                    active_proxies[link]['clients'].remove(self.client_address)
 
-            except Exception as e:
-                # Handle client disconnect or other errors
-                active_proxies[link]['clients'].remove(self)
-                if not active_proxies[link]['clients']:
-                    active_proxies[link]['encoder_connection'].close()
-                    del active_proxies[link]
+                    # If no more clients are accessing this link, stop the Kodi box playing it
+                    if not active_proxies[link]['clients']:
+                        stop_kodi_playback(active_links[link])  # Assuming you've implemented this function to stop playback
+                        del active_links[link]
+                        active_proxies[link]['encoder_connection'].close()
+                        del active_proxies[link]
 
 class MyHandler(BaseHTTPRequestHandler):
 
@@ -231,79 +329,34 @@ class MyHandler(BaseHTTPRequestHandler):
             with play_request_lock:
                 query_params = parse_qs(parsed_path.query)
                 link = query_params.get('link', [''])[0]
-
-                # Store the link as soon as it's gathered
-                store_link(link)
-
-                # Check if the link exists in the active_streams table
-                encoder_url = get_encoder_url_for_link(link)
-                if encoder_url:
-                    # Redirect to the encoder URL
-                    # Redirect the caller to the proxy, not the encoder
-                    proxy_url = f"http://{master_ip}:{server_port + 1}/proxy?link={quote(link)}"
-                    self.send_response(302)
-                    self.send_header('Location', proxy_url)
-                    self.end_headers()
+                available_kodi_box = get_available_kodi_box(link)
+                if available_kodi_box:
+                    # If the link is already playing on a Kodi box, just redirect to its encoder URL
+                    encoder_url = available_kodi_box['Encoder_URL']
                 else:
-                    # Find an available Kodi box
-                    available_kodi_box = get_available_kodi_box()
+                    # Else, initiate playback on a Kodi box and then redirect
+                    available_kodi_box = get_available_kodi_box(None)
                     if available_kodi_box:
-                        # Log to the table that you're using this Kodi box
-                        insert_into_active_streams(available_kodi_box['IP'], 'Active', link)
-            
-                        # Send the JSON-RPC to the Kodi box
-                        payload = {
-                            "jsonrpc": "2.0",
-                            "method": "Player.Open",
-                            "params": {
-                                "item": {
-                                    "file": link
-                                }
-                            },
-                            "id": 1
-                        }
-                        kodi_url = "local" if available_kodi_box["Actor"] == "Master" else f"http://{available_kodi_box['IP']}:8080/jsonrpc"
-                        response_json = send_jsonrpc(kodi_url, payload)
-            
-                        if response_json and 'error' in response_json:
-                            xbmc.log(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
-                            # Handle the error (e.g., send a failure response or try another Kodi box)
-                        else:
-                            # Redirect the caller
-                            self.send_response(302)
-                            self.send_header('Location', available_kodi_box['Encoder_URL'])
-                            self.end_headers()
+                        start_kodi_playback(available_kodi_box, link)  # Implement the start_kodi_playback function
+                        encoder_url = available_kodi_box['Encoder_URL']
+                        with active_links_lock:
+                            active_links[link] = available_kodi_box["IP"]
                     else:
-                        self.send_response(503)  # This sets the HTTP status code to 503
-                        self.send_header('Content-Type', 'text/plain')  # Optional, sets the content type of the response
-                        self.end_headers()  # This ends the HTTP headers section
+                        self.send_error(503, "All Kodi boxes are in use.")
+                        return
+                with last_accessed_links_lock:
+                    last_accessed_links[link] = datetime.datetime.now()
+                proxy_url = f"http://{master_ip}:{server_port + 1}/proxy?link={quote(link)}"
+                self.send_response(302)
+                self.send_header('Location', proxy_url)
+                self.end_headers()                
     
-                # Check if the Kodi instance has been active for over 4 hours
-                rows = query_database('SELECT timestamp FROM links WHERE link = ?', (link,))
-                if rows:
-                    timestamp_str = rows[0][0]
-                    try:
-                        timestamp = time.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-                        current_time = time.time()
-                        duration = current_time - time.mktime(timestamp)
-                
-                        if duration > (4 * 60 * 60):  # 4 hours in seconds
-                            associated_kodi_ip = get_kodi_for_link(link)  # This method should return the Kodi IP associated with a link
-                            stop_kodi_playback(associated_kodi_ip)
-                    except ValueError:
-                        log_message(f"Error parsing timestamp: {timestamp_str} for link: {link}", level=xbmc.LOGERROR)
 
 MAX_WORKERS = 10  # Adjust this based on the maximum number of simultaneous threads you expect
 
 def run():
     try:
         log_message("Starting server...")
-        log_message("Deleting database...")
-        delete_database()
-        log_message("Creating database...")
-        create_database()
-        log_message("Populating Kodi boxes...")
-        populate_kodi_boxes()
         
         # Main server (synchronous)
         log_message(f"Starting main server on port {server_port}...")
@@ -316,6 +369,7 @@ def run():
         proxy_httpd = ThreadingHTTPServer(proxy_address, ProxyHandler)
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            cleanup_future = executor.submit(cleanup_stale_entries)
             main_future = executor.submit(main_httpd.serve_forever)
             proxy_future = executor.submit(proxy_httpd.serve_forever)
             
