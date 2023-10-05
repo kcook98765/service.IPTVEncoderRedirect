@@ -63,9 +63,8 @@ KODI_BOXES = [
     }
 ]
 
-
 from database_helper import (
-    create_database, populate_kodi_boxes, query_database, 
+    DATABASE_NAME, create_database, populate_kodi_boxes, query_database, 
     modify_database, store_address, store_link,
     insert_into_active_streams, update_active_stream_status,
     truncate_addresses_table, KODI_BOXES
