@@ -50,14 +50,22 @@ def initialize_kodi_boxes():
     if master_proxy_port is None:
         log_message("No available port found for Master Kodi proxy.", level=xbmc.LOGERROR)
     else:
-        kodi_boxes.append({
-            "Actor": "Master",
-            "IP": xbmc.getIPAddress(),
-            "Encoder_URL": 'http://192.168.2.168/0.ts',
-            "Status": "IDLE",
-            "Proxy_Port": master_proxy_port,
-            "Server_Port": ADDON.getSetting('master_server_port'),  # Update with your master server port setting
-        })
+        master_server_port = ADDON.getSetting('master_server_port')
+        try:
+            master_server_port = int(master_server_port)  # Convert to integer
+        except ValueError:
+            log_message("Invalid master_server_port setting. Please provide a valid numeric port.", level=xbmc.LOGERROR)
+            master_server_port = None
+
+        if master_server_port is not None:
+            kodi_boxes.append({
+                "Actor": "Master",
+                "IP": xbmc.getIPAddress(),
+                "Encoder_URL": 'http://192.168.2.168/0.ts',
+                "Status": "IDLE",
+                "Proxy_Port": master_proxy_port,
+                "Server_Port": master_server_port,
+            })
 
     # Slave Kodi instance(s)
     slave_settings = [
