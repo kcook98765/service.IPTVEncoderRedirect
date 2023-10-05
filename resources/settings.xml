@@ -3,50 +3,58 @@
     <section id="service.IPTVEncoderRedirect">
         <category id="general" label="General" help="">
             <group id="1" label="Master">
-	            <setting help="Enter the IP address of the master Kodi server." id="master_ip" label="Master IP" type="string" default="0.0.0.0">
+                <setting id="master_ip" type="string" label="Master IP" help="Enter the IP address of the master Kodi server.">
+                    <level>0</level>
+                    <default>0.0.0.0</default>
+                    <control type="edit" format="ip" />
+                </setting>
+	            <setting id="server_port" label="Server Port" type="integer" help="Specify the port number for this main server addon.">
 	                <level>0</level>
-	                <control type="textbox" />
-	            </setting>
-	            <setting help="Provide the streaming URL for the associated master encoder." id="master_encoder_url" label="Master Encoder URL" type="string" default="http://example.com/0.ts">
-	                <level>1</level>
-	                <control type="textbox" />
-	            </setting>
-	            <setting help="Specify the port number for this main server addon." id="server_port" label="Server Port" type="integer">
-	                <level>2</level>
 	                <default>9191</default>
 	                <control type="edit" format="integer" />
 	            </setting>
-	        </group>
+                <setting id="master_encoder_url" type="string" label="Master Encoder URL" help="Provide the streaming URL for the associated master encoder.">
+                    <level>0</level>
+                    <default>http://example.com/0.ts</default>
+                    <control type="edit" format="string" />
+                </setting>
+            </group>
             <group id="2" label="Slaves">
-	            <setting help="Enter the IP address of the first slave Kodi server." id="slave_1_ip" label="Slave 1 IP" type="string" default="0.0.0.0">
-	                <level>0</level>
-	                <control type="textbox" />
-	            </setting>
-	            <setting help="Provide the streaming URL for the first associated slave encoder." id="slave_1_encoder_url" label="Slave 1 Encoder URL" type="string" default="http://example.com/1.ts">
-	                <level>1</level>
-	                <control type="textbox" />
-	            </setting>
-	
-	            <!-- Slave 2 -->
-	            <setting help="Enter the IP address of the second slave Kodi server." id="slave_2_ip" label="Slave 2 IP" type="string" default="0.0.0.0">
-	                <level>0</level>
-	                <control type="textbox" />
-	            </setting>
-	            <setting help="Provide the streaming URL for the second associated slave encoder." id="slave_2_encoder_url" label="Slave 2 Encoder URL" type="string" default="http://example.com/2.ts">
-	                <level>1</level>
-	                <control type="textbox" />
-	            </setting>
-	
-	            <!-- Slave 3 -->
-	            <setting help="Enter the IP address of the third slave Kodi server." id="slave_3_ip" label="Slave 3 IP" type="string" default="0.0.0.0">
-	                <level>0</level>
-	                <control type="textbox" />
-	            </setting>
-	            <setting help="Provide the streaming URL for the third associated slave encoder." id="slave_3_encoder_url" label="Slave 3 Encoder URL" type="string" default="http://example.com/3.ts">
-	                <level>1</level>
-	                <control type="textbox" />
-	            </setting>
-	        </group>
+                <setting id="slave_1_ip" type="string" label="Slave 1 IP" help="Enter the IP address of the first slave Kodi server.">
+                    <level>0</level>
+                    <default>0.0.0.0</default>
+                    <control type="edit" format="ip" />
+                </setting>
+                <setting id="slave_1_encoder_url" type="string" label="Slave 1 Encoder URL" help="Provide the streaming URL for the first associated slave encoder.">
+                    <level>0</level>
+                    <default>http://example.com/1.ts</default>
+                    <control type="edit" format="string" />
+                </setting>
+
+                <!-- Slave 2 -->
+                <setting id="slave_2_ip" type="string" label="Slave 2 IP" help="Enter the IP address of the second slave Kodi server.">
+                    <level>0</level>
+                    <default>0.0.0.0</default>
+                    <control type="edit" format="ip" />
+                </setting>
+                <setting id="slave_2_encoder_url" type="string" label="Slave 2 Encoder URL" help="Provide the streaming URL for the second associated slave encoder.">
+                    <level>0</level>
+                    <default>http://example.com/2.ts</default>
+                    <control type="edit" format="string" />
+                </setting>
+
+                <!-- Slave 3 -->
+                <setting id="slave_3_ip" type="string" label="Slave 3 IP" help="Enter the IP address of the third slave Kodi server.">
+                    <level>0</level>
+                    <default>0.0.0.0</default>
+                    <control type="edit" format="ip" />
+                </setting>
+                <setting id="slave_3_encoder_url" type="string" label="Slave 3 Encoder URL" help="Provide the streaming URL for the third associated slave encoder.">
+                    <level>0</level>
+                    <default>http://example.com/3.ts</default>
+                    <control type="edit" format="string" />
+                </setting>
+            </group>
         </category>
     </section>
 </settings>

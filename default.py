@@ -442,7 +442,7 @@ def run():
         # Main server (synchronous)
         master_box = get_master_kodi_box()
         if not master_box:
-            xbmcgui.Dialog().ok("Error", "Master Kodi settings not found. Addon will be disabled.")
+            xbmcgui.Dialog().ok("Error", "Master Kodi settings not found or set correctly. Addon will be disabled.")
             xbmcaddon.Addon().setSetting("enabled", "false")  # Disable the addon
             return
         
