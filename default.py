@@ -1,6 +1,7 @@
 import xbmc
 import xbmcaddon
 import xbmcvfs
+import os
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import urlopen, Request
