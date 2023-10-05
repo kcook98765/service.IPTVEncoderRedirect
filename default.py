@@ -55,7 +55,7 @@ def initialize_kodi_boxes():
     if master_proxy_port is None:
         log_message("No available port found for Master Kodi proxy.", level=xbmc.LOGERROR)
     else:
-        master_server_port = ADDON.getSetting('master_server_port')
+        master_server_port = ADDON.getSetting('server_port')
         try:
             master_server_port = int(master_server_port)  # Convert to integer
         except ValueError:
