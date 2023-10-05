@@ -4,19 +4,16 @@
         <!-- Master Configuration -->
         <category id="master" label="Master">
             <group id="1">
-                <setting id="master_ip" type="text" label="Master IP" default="0.0.0.0">
-                    <help>Enter the IP address of the master Kodi server.</help>
+                <setting id="master_ip" type="text" label="Master IP" default="0.0.0.0" help="Enter the IP address of the master Kodi server.">
                     <control type="text" />
                 </setting>
                 
-                <setting id="master_encoder_url" type="text" label="Master Encoder URL" default="http://example.com">
-                    <help>Provide the streaming URL for the associated master encoder.</help>
+                <setting id="master_encoder_url" type="text" label="Master Encoder URL" default="http://example.com" help="Provide the streaming URL for the associated master encoder.">
                     <control type="text" />
                 </setting>
                 
-                <setting id="server_port" type="number" label="Server Port" default="9191">
-                    <help>Specify the port number for the server connection.</help>
-                    <control type="number" />
+                <setting id="server_port" type="number" label="Server Port" default="9191" help="Specify the port number for the server connection.">
+                    <control type="edit" />
                 </setting>
             </group>
         </category>
@@ -25,39 +22,33 @@
         <category id="slaves" label="Slaves">
             <!-- Slave 1 -->
             <group id="2">
-                <setting id="slave_1_ip" type="text" label="Slave 1 IP" default="0.0.0.0">
-                    <help>Enter the IP address of the first slave Kodi server.</help>
+                <setting id="slave_1_ip" type="text" label="Slave 1 IP" default="0.0.0.0" help="Enter the IP address of the first slave Kodi server.">
                     <control type="text" />
                 </setting>
 
-                <setting id="slave_1_encoder_url" type="text" label="Slave 1 Encoder URL" default="http://example.com">
-                    <help>Provide the streaming URL for the first associated slave encoder.</help>
+                <setting id="slave_1_encoder_url" type="text" label="Slave 1 Encoder URL" default="http://example.com" help="Provide the streaming URL for the first associated slave encoder.">
                     <control type="text" />
                 </setting>
             </group>
             
             <!-- Slave 2 -->
             <group id="3">
-                <setting id="slave_2_ip" type="text" label="Slave 2 IP" default="0.0.0.0">
-                    <help>Enter the IP address of the second slave Kodi server.</help>
+                <setting id="slave_2_ip" type="text" label="Slave 2 IP" default="0.0.0.0" help="Enter the IP address of the second slave Kodi server.">
                     <control type="text" />
                 </setting>
 
-                <setting id="slave_2_encoder_url" type="text" label="Slave 2 Encoder URL" default="http://example.com">
-                    <help>Provide the streaming URL for the second associated slave encoder.</help>
+                <setting id="slave_2_encoder_url" type="text" label="Slave 2 Encoder URL" default="http://example.com" help="Provide the streaming URL for the second associated slave encoder.">
                     <control type="text" />
                 </setting>
             </group>
 
             <!-- Slave 3 -->
             <group id="4">
-                <setting id="slave_3_ip" type="text" label="Slave 3 IP" default="0.0.0.0">
-                    <help>Enter the IP address of the third slave Kodi server.</help>
+                <setting id="slave_3_ip" type="text" label="Slave 3 IP" default="0.0.0.0" help="Enter the IP address of the third slave Kodi server.">
                     <control type="text" />
                 </setting>
 
-                <setting id="slave_3_encoder_url" type="text" label="Slave 3 Encoder URL" default="http://example.com">
-                    <help>Provide the streaming URL for the third associated slave encoder.</help>
+                <setting id="slave_3_encoder_url" type="text" label="Slave 3 Encoder URL" default="http://example.com" help="Provide the streaming URL for the third associated slave encoder.">
                     <control type="text" />
                 </setting>
             </group>
