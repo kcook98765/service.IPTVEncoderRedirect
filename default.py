@@ -21,13 +21,6 @@ ADDON_PATH = ADDON.getAddonInfo("path")
 ADDON_NAME = ADDON.getAddonInfo("name")
 ADDON_ID = ADDON.getAddonInfo("id")
 
-profilePath = xbmcvfs.translatePath( ADDON.getAddonInfo('profile') )
-if not os.path.exists(profilePath):
-    os.makedirs(profilePath)
-
-DATABASE_NAME = xbmcvfs.translatePath(os.path.join(profilePath, 'IPTVEncoderRedirect_data.db'))
-
-
 
 from database_helper import (
     create_database, populate_kodi_boxes, query_database, 
