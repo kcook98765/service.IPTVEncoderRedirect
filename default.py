@@ -86,6 +86,17 @@ def log_message(message, level=xbmc.LOGDEBUG):
     if ENABLE_LOGGING or level == xbmc.LOGERROR:
         xbmc.log(message, level=level)
 
+def get_encoder_url_for_link(link):
+    with active_links_lock:
+        kodi_ip = active_links.get(link)
+        if kodi_ip:
+            for box in KODI_BOXES:
+                if box["IP"] == kodi_ip:
+                    return box["Encoder_URL"]
+    log_message(f"Could not find Encoder_URL for link {link}", level=xbmc.LOGERROR)
+    return None  # or some default encoder URL if you have one
+
+
 def get_available_kodi_box(link):
     with active_links_lock:
         # Return the Kodi box if it's already playing the link
