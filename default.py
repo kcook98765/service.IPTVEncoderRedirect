@@ -22,6 +22,11 @@ last_accessed_links_lock = threading.Lock()
 
 assigned_ports = []
 
+def log_message(message, level=xbmc.LOGDEBUG):
+    if ENABLE_LOGGING or level == xbmc.LOGERROR:
+        xbmc.log(message, level=level)
+
+
 def find_available_port(start_port, end_port):
     for port in range(start_port, end_port + 1):
         if port not in assigned_ports:
@@ -113,11 +118,6 @@ def get_master_kodi_box():
         if box["Actor"] == "Master":
             return box
     return None  # Return None if no Master box is found
-
-
-def log_message(message, level=xbmc.LOGDEBUG):
-    if ENABLE_LOGGING or level == xbmc.LOGERROR:
-        xbmc.log(message, level=level)
 
 def get_encoder_url_for_link(link):
     with active_links_lock:
