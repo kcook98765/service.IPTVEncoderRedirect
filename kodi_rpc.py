@@ -6,6 +6,7 @@ import xbmcaddon
 import xbmcvfs
 import os
 import time
+from database_helper import query_database, KODI_BOXES
 
 ADDON = xbmcaddon.Addon()
 ADDON_PATH = ADDON.getAddonInfo("path")
@@ -56,6 +57,19 @@ KODI_BOXES = [
         "Encoder_URL": slave_3_encoder_url
     }
 ]
+
+
+def get_encoder_url_for_link(link):
+    rows = query_database(
+        'SELECT IP FROM active_streams WHERE link = ? AND status = "Active"',
+        (link,)
+    )
+    # ... rest of the code
+
+def get_available_kodi_box():
+    rows = query_database(
+        'SELECT IP FROM active_streams WHERE status = "Inactive"'
+    )
 
 def send_jsonrpc(kodi_url, payload, headers=None):
     """

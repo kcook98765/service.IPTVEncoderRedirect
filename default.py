@@ -68,12 +68,12 @@ from database_helper import (
     create_database, populate_kodi_boxes, query_database, 
     modify_database, store_address, store_link,
     insert_into_active_streams, update_active_stream_status,
-    truncate_addresses_table, get_encoder_url_for_link, 
-    get_available_kodi_box
+    truncate_addresses_table, KODI_BOXES
 )
 
 from kodi_rpc import (
-    send_jsonrpc, stop_kodi_playback
+    send_jsonrpc, stop_kodi_playback, get_encoder_url_for_link, 
+    get_available_kodi_box
 )
 
 
@@ -81,6 +81,16 @@ from kodi_rpc import (
 play_request_lock = threading.Lock()
 active_proxies = {}  # Dictionary to maintain active proxies per link
 proxy_clients = {}  # Dictionary to maintain active clients for each proxy
+
+def delete_database():
+    """Delete the SQLite database file to reset the database."""
+    if xbmcvfs.exists(DATABASE_NAME):
+        xbmcvfs.delete(DATABASE_NAME)
+        xbmc.log(f"Database {DATABASE_NAME} deleted.", level=xbmc.LOGINFO)
+    else:
+        xbmc.log(f"Database {DATABASE_NAME} not found.", level=xbmc.LOGINFO)
+
+
 
 def log_message(message, level=xbmc.LOGDEBUG):
     if ENABLE_LOGGING or level == xbmc.LOGERROR:
@@ -289,6 +299,8 @@ MAX_WORKERS = 10  # Adjust this based on the maximum number of simultaneous thre
 def run():
     try:
         log_message("Starting server...")
+        log_message("Deleting database...")
+        delete_database()
         log_message("Creating database...")
         create_database()
         log_message("Populating Kodi boxes...")
