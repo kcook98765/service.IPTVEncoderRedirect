@@ -2,7 +2,53 @@ import json
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
 import xbmc
+import xbmcaddon
+import xbmcvfs
+import os
 
+ADDON = xbmcaddon.Addon()
+ADDON_PATH = ADDON.getAddonInfo("path")
+ADDON_NAME = ADDON.getAddonInfo("name")
+ADDON_ID = ADDON.getAddonInfo("id")
+
+# Read Master settings
+master_ip = ADDON.getSetting('master_ip')
+master_encoder_url = ADDON.getSetting('master_encoder_url')
+server_port_setting = ADDON.getSetting('server_port')
+server_port = int(server_port_setting) if server_port_setting else 9191
+
+# Read Slave settings
+slave_1_ip = ADDON.getSetting('slave_1_ip')
+slave_1_encoder_url = ADDON.getSetting('slave_1_encoder_url')
+
+slave_2_ip = ADDON.getSetting('slave_2_ip')
+slave_2_encoder_url = ADDON.getSetting('slave_2_encoder_url')
+
+slave_3_ip = ADDON.getSetting('slave_3_ip')
+slave_3_encoder_url = ADDON.getSetting('slave_3_encoder_url')
+
+KODI_BOXES = [
+    {
+        "Actor": "Master",
+        "IP": master_ip,
+        "Encoder_URL": master_encoder_url
+    },
+    {
+        "Actor": "Slave",
+        "IP": slave_1_ip,
+        "Encoder_URL": slave_1_encoder_url
+    },
+    {
+        "Actor": "Slave",
+        "IP": slave_2_ip,
+        "Encoder_URL": slave_2_encoder_url
+    },
+    {
+        "Actor": "Slave",
+        "IP": slave_3_ip,
+        "Encoder_URL": slave_3_encoder_url
+    }
+]
 
 def send_jsonrpc(kodi_url, payload, headers=None):
     """
@@ -43,7 +89,6 @@ def stop_kodi_playback(kodi_ip):
     send_jsonrpc(payload, f"http://{kodi_ip}:8080/jsonrpc")
 
 def get_encoder_url_for_link(link):
-    global KODI_BOXES
     rows = query_database(
         'SELECT IP FROM active_streams WHERE link = ? AND status = "Active"',
         (link,)
@@ -55,7 +100,6 @@ def get_encoder_url_for_link(link):
     return None
 
 def get_available_kodi_box():
-    global KODI_BOXES
     rows = query_database(
         'SELECT IP FROM active_streams WHERE status = "Inactive"'
     )

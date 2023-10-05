@@ -12,6 +12,50 @@ if not os.path.exists(profilePath):
 
 DATABASE_NAME = xbmcvfs.translatePath(os.path.join(profilePath, 'IPTVEncoderRedirect_data.db'))
 
+ADDON_PATH = ADDON.getAddonInfo("path")
+ADDON_NAME = ADDON.getAddonInfo("name")
+ADDON_ID = ADDON.getAddonInfo("id")
+
+# Read Master settings
+master_ip = ADDON.getSetting('master_ip')
+master_encoder_url = ADDON.getSetting('master_encoder_url')
+server_port_setting = ADDON.getSetting('server_port')
+server_port = int(server_port_setting) if server_port_setting else 9191
+
+# Read Slave settings
+slave_1_ip = ADDON.getSetting('slave_1_ip')
+slave_1_encoder_url = ADDON.getSetting('slave_1_encoder_url')
+
+slave_2_ip = ADDON.getSetting('slave_2_ip')
+slave_2_encoder_url = ADDON.getSetting('slave_2_encoder_url')
+
+slave_3_ip = ADDON.getSetting('slave_3_ip')
+slave_3_encoder_url = ADDON.getSetting('slave_3_encoder_url')
+
+KODI_BOXES = [
+    {
+        "Actor": "Master",
+        "IP": master_ip,
+        "Encoder_URL": master_encoder_url
+    },
+    {
+        "Actor": "Slave",
+        "IP": slave_1_ip,
+        "Encoder_URL": slave_1_encoder_url
+    },
+    {
+        "Actor": "Slave",
+        "IP": slave_2_ip,
+        "Encoder_URL": slave_2_encoder_url
+    },
+    {
+        "Actor": "Slave",
+        "IP": slave_3_ip,
+        "Encoder_URL": slave_3_encoder_url
+    }
+]
+
+
 
 def create_database():
     conn = sqlite3.connect(DATABASE_NAME)
@@ -54,7 +98,6 @@ def create_database():
     conn.close()
 
 def populate_kodi_boxes():
-    global KODI_BOXES
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         c = conn.cursor()
