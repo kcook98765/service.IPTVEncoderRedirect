@@ -1,20 +1,15 @@
-import xbmc
-import xbmcaddon
-import xbmcvfs
-import os
+import xbmc, xbmcaddon, xbmcvfs
+import os, json, time, threading, datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 from concurrent.futures import ThreadPoolExecutor
-import json  # import the json module
-import time
-import threading
-import datetime
+
+ADDON = xbmcaddon.Addon()
 
 ENABLE_LOGGING = True # FALSE to shut off
 
-# Constants
 CLEANUP_INTERVAL_SECONDS = 3600  # This will check for cleanup every hour. Adjust as needed.
 MAX_LINK_IDLE_TIME_SECONDS = 3600 * 1  # Remove links that have been idle for 1 hour.
 
@@ -22,54 +17,28 @@ MAX_LINK_IDLE_TIME_SECONDS = 3600 * 1  # Remove links that have been idle for 1 
 last_accessed_links = {}
 last_accessed_links_lock = threading.Lock()
 
-
-ADDON = xbmcaddon.Addon()
-
-# Read Master settings
 # master_ip = ADDON.getSetting('master_ip')
 # master_encoder_url = ADDON.getSetting('master_encoder_url')
 
-master_ip = '192.168.2.9'
-master_encoder_url = 'http://192.168.2.168/0.ts'
-server_port_setting = ADDON.getSetting('server_port')
-server_port = int(server_port_setting) if server_port_setting else 9191
+def initialize_kodi_boxes():
+    return [
+        {
+            "Actor": "Master",
+            "IP": xbmc.getIPAddress(),
+            "Encoder_URL": 'http://192.168.2.168/0.ts',
+            "Status": "IDLE",
+            "Proxy_Port": 9192
+        },
+        {
+            "Actor": "Slave",
+            "IP": ADDON.getSetting('slave_1_ip'),
+            "Encoder_URL": ADDON.getSetting('slave_1_encoder_url'),
+            "Status": "IDLE",
+            "Proxy_Port": 9193
+        }
+    ]
 
-# Read Slave settings
-slave_1_ip = ADDON.getSetting('slave_1_ip')
-slave_1_encoder_url = ADDON.getSetting('slave_1_encoder_url')
-
-slave_2_ip = ADDON.getSetting('slave_2_ip')
-slave_2_encoder_url = ADDON.getSetting('slave_2_encoder_url')
-
-slave_3_ip = ADDON.getSetting('slave_3_ip')
-slave_3_encoder_url = ADDON.getSetting('slave_3_encoder_url')
-
-KODI_BOXES = [
-    {
-        "Actor": "Master",
-        "IP": master_ip,
-        "Encoder_URL": master_encoder_url,
-        "Status": "IDLE"
-    },
-    {
-        "Actor": "Slave",
-        "IP": slave_1_ip,
-        "Encoder_URL": slave_1_encoder_url,
-        "Status": "IDLE"
-    },
-    {
-        "Actor": "Slave",
-        "IP": slave_2_ip,
-        "Encoder_URL": slave_2_encoder_url,
-        "Status": "IDLE"
-    },
-    {
-        "Actor": "Slave",
-        "IP": slave_3_ip,
-        "Encoder_URL": slave_3_encoder_url,
-        "Status": "IDLE"
-    }
-]
+KODI_BOXES = initialize_kodi_boxes()
 
 play_request_lock = threading.Lock()
 
@@ -81,6 +50,14 @@ proxy_clients_lock = threading.Lock()
 
 active_links = {} # link: kodi_box_info
 active_links_lock = threading.Lock()
+
+
+def get_master_kodi_box():
+    for box in KODI_BOXES:
+        if box["Actor"] == "Master":
+            return box
+    return None  # Return None if no Master box is found
+
 
 def log_message(message, level=xbmc.LOGDEBUG):
     if ENABLE_LOGGING or level == xbmc.LOGERROR:
@@ -115,7 +92,7 @@ def get_available_kodi_box(link):
 
 
 def start_kodi_playback(kodi_box, link):
-    log_message(f"Starting playback on Kodi box with IP: {kodi_box_ip} for {link}", level=xbmc.LOGDEBUG)
+    log_message(f"Starting playback on Kodi box with IP: {kodi_box['IP']} for {link}", level=xbmc.LOGDEBUG)
     payload = {
         "jsonrpc": "2.0",
         "method": "Player.Open",
@@ -135,7 +112,7 @@ def start_kodi_playback(kodi_box, link):
 
 def stop_kodi_playback(kodi_box_ip):
     # Send a command to stop playback on the specified Kodi box.
-    log_message(f"Stopping playback on Kodi box with IP: {kodi_box_ip}", level=xbmc.LOGDEBUG)
+    log_message(f"Stopping playback on Kodi box with IP: {kodi_box['IP']}", level=xbmc.LOGDEBUG)
     payload = {
         "jsonrpc": "2.0",
         "method": "Player.Stop",
@@ -254,7 +231,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             with active_proxies_lock:  # Assuming you've created this lock at the top
                 if link not in active_proxies:
                     # Initialize this link's proxy info
-                    encoder_url = get_encoder_url_for_link(link)  # Implement this function to get encoder URL for a link
+                    encoder_url = get_encoder_url_for_link(link)
                     active_proxies[link] = {
                         'encoder_connection': urlopen(encoder_url),
                         'clients': set()
@@ -277,7 +254,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
                     # If no more clients are accessing this link, stop the Kodi box playing it
                     if not active_proxies[link]['clients']:
-                        stop_kodi_playback(active_links[link])  # Assuming you've implemented this function to stop playback
+                        stop_kodi_playback(active_links[link])
                         del active_links[link]
                         active_proxies[link]['encoder_connection'].close()
                         del active_proxies[link]
@@ -297,71 +274,108 @@ class MyHandler(BaseHTTPRequestHandler):
         path = parsed_path.path
 
         if path == '/playlist.m3u8':
-            log_message("Received request for playlist.")
-            try:
-                response = urlopen('http://localhost:52104/playlist.m3u8')
-                content = response.read().decode('utf-8')  # assuming the content is UTF-8 encoded
-                lines = content.split('\n')  # use content instead of response.text
-                new_lines = []
-                for line in lines:
-                    if line.startswith('plugin://'):
-                        # URL encode the plugin URL and replace it with the new URL
-                        encoded_line = quote(line, safe='')
-                        new_url = f'http://{master_ip}:{server_port}/play?link={encoded_line}'
-                        new_lines.append(new_url)
-                    else:
-                        new_lines.append(line)
-
-                new_content = '\n'.join(new_lines)
-                self.send_response(200)
-                self.send_header('Content-type', 'application/vnd.apple.mpegurl')
-                self.end_headers()
-                self.wfile.write(new_content.encode())
-            except Exception as e:
-                self.handle_error(e, "Internal server error")
-
-
+            self.handle_playlist_request()
         elif path == '/epg.xml':
-            log_message("Received request for EPG.")
-            try:
-                response = urlopen('http://localhost:52104/epg.xml')
-                content = response.read()  # read the content as bytes
-                self.send_response(200)
-                self.send_header('Content-type', 'application/xml')
-                self.end_headers()
-                self.wfile.write(content)
-            except URLError as e:
-                xbmc.log(f"An error occurred: {e}")
-                self.send_response(500)
-                self.end_headers()
-
+            self.handle_epg_request()
         elif path == '/play':
-            log_message("Received play request.")
-            with play_request_lock:
-                query_params = parse_qs(parsed_path.query)
-                link = query_params.get('link', [''])[0]
-                available_kodi_box = get_available_kodi_box(link)
+            link = parse_qs(parsed_path.query).get('link', [''])[0]
+            self.handle_play_request(link)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def handle_playlist_request(self):
+        log_message("Received request for playlist.")
+        try:
+            content = self.fetch_content('http://localhost:52104/playlist.m3u8')
+            transformed_content = self.transform_playlist_content(content)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/vnd.apple.mpegurl')
+            self.end_headers()
+            self.wfile.write(transformed_content.encode())
+        except Exception as e:
+            self.handle_error(e, "Internal server error")
+
+    def handle_epg_request(self):
+        log_message("Received request for EPG.")
+        try:
+            content = self.fetch_content('http://localhost:52104/epg.xml')
+            self.send_response(200)
+            self.send_header('Content-type', 'application/xml')
+            self.end_headers()
+            self.wfile.write(content)
+        except URLError as e:
+            self.handle_error(e)
+
+    def handle_play_request(self, parsed_path):
+        log_message("Received play request.")
+        with play_request_lock:
+            query_params = parse_qs(parsed_path.query)
+            link = query_params.get('link', [''])[0]
+            self.process_play_request(link)
+
+    def fetch_content(self, url):
+        response = urlopen(url)
+        return response.read().decode('utf-8')
+
+    def transform_playlist_content(self, content):
+        lines = content.split('\n')
+        new_lines = []
+        master_box = get_master_kodi_box()
+        if not master_box:
+            raise Exception("Master Kodi box not found!")
+        for line in lines:
+            if line.startswith('plugin://'):
+                encoded_line = quote(line, safe='')
+                new_url = f"http://{master_box['IP']}:{master_box['Proxy_Port']}/proxy?link={encoded_line}"
+                new_lines.append(new_url)
+            else:
+                new_lines.append(line)
+        return '\n'.join(new_lines)
+
+    def process_play_request(self, link):
+        log_message("Received play request.")
+        with play_request_lock:
+            available_kodi_box = get_available_kodi_box(link)
+            if available_kodi_box:
+                # If the link is already playing on a Kodi box, just redirect to its encoder URL
+                encoder_url = available_kodi_box['Encoder_URL']
+            else:
+                # Else, initiate playback on a Kodi box and then redirect
+                available_kodi_box = get_available_kodi_box(None)
                 if available_kodi_box:
-                    # If the link is already playing on a Kodi box, just redirect to its encoder URL
+                    start_kodi_playback(available_kodi_box, link)
                     encoder_url = available_kodi_box['Encoder_URL']
+                    with active_links_lock:
+                        active_links[link] = available_kodi_box["IP"]
                 else:
-                    # Else, initiate playback on a Kodi box and then redirect
-                    available_kodi_box = get_available_kodi_box(None)
-                    if available_kodi_box:
-                        start_kodi_playback(available_kodi_box, link)  # Implement the start_kodi_playback function
-                        encoder_url = available_kodi_box['Encoder_URL']
-                        with active_links_lock:
-                            active_links[link] = available_kodi_box["IP"]
-                    else:
-                        self.send_error(503, "All Kodi boxes are in use.")
-                        return
-                with last_accessed_links_lock:
-                    last_accessed_links[link] = datetime.datetime.now()
-                proxy_url = f"http://{master_ip}:{server_port + 1}/proxy?link={quote(link)}"
-                self.send_response(302)
-                self.send_header('Location', proxy_url)
-                self.end_headers()                
-    
+                    self.send_error(503, "All Kodi boxes are in use.")
+                    return
+            with last_accessed_links_lock:
+                last_accessed_links[link] = datetime.datetime.now()
+            master_box = get_master_kodi_box()
+            if not master_box:
+                raise Exception("Master Kodi box not found!")
+            proxy_url = f"http://{master_box['IP']}:{master_box['Proxy_Port']}/proxy?link={quote(link)}"
+
+            self.send_response(302)
+            self.send_header('Location', proxy_url)
+            self.end_headers()                
+
+class MyMonitor(xbmc.Monitor):
+    def __init__(self, main_httpd, proxy_servers):
+        self.main_httpd = main_httpd
+        self.proxy_servers = proxy_servers
+
+    def onAbortRequested(self):
+        log_message("Kodi is shutting down...")
+        self.main_httpd.shutdown()
+        for _, proxy_server in self.proxy_servers.items():
+            proxy_server.shutdown()
+        main_httpd.server_close()
+        for _, proxy_server in self.proxy_servers.items():
+            proxy_server.server_close()
+        log_message("Servers shut down.")
 
 MAX_WORKERS = 10  # Adjust this based on the maximum number of simultaneous threads you expect
 
@@ -372,26 +386,46 @@ def run():
         # Main server (synchronous)
         log_message(f"Starting main server on port {server_port}...")
         server_address = ('', server_port)
-        main_httpd = HTTPServer(server_address, MyHandler)  # Just HTTPServer for synchronous behavior
+        main_httpd = HTTPServer(server_address, MyHandler)
 
-        # Proxy server (asynchronous to handle multiple clients)
-        log_message(f"Starting proxy server on port {server_port + 1}...")
-        proxy_address = ('', server_port + 1)  # Assuming the proxy runs on the next port
-        proxy_httpd = ThreadingHTTPServer(proxy_address, ProxyHandler)
+        # Create a dictionary to hold proxy servers for each KODI_BOX
+        proxy_servers = {}
+
+        for box in KODI_BOXES:
+            proxy_port = box['Proxy_Port']
+            log_message(f"Starting proxy server for {box['Actor']} on port {proxy_port}...")
+            proxy_address = ('', proxy_port)
+            proxy_httpd = ThreadingHTTPServer(proxy_address, ProxyHandler)
+            proxy_servers[proxy_port] = proxy_httpd
+
+        monitor = MyMonitor(main_httpd, proxy_servers)
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             cleanup_future = executor.submit(cleanup_stale_entries)
             main_future = executor.submit(main_httpd.serve_forever)
-            proxy_future = executor.submit(proxy_httpd.serve_forever)
+            # Submit each proxy server to the executor
+            proxy_futures = []
+            for port, proxy_server in proxy_servers.items():
+                future = executor.submit(proxy_server.serve_forever)
+                proxy_futures.append(future)
             
-            log_message("Both servers are now running.")
+            log_message("Both main server and proxy servers are now running.")
 
-            # Wait for both servers to complete. In practice, these servers run forever unless an exception occurs.
+            # Monitor for Kodi shutdown or addon disable
+            while not monitor.abortRequested():
+                if monitor.waitForAbort(1):  # Check every 1 second if Kodi is shutting down
+                    log_message("Kodi abort requested. Cleaning up...")
+                    break
+
+            # Wait for all tasks to complete
+            cleanup_future.result()
             main_future.result()
-            proxy_future.result()
+            for future in proxy_futures:
+                future.result()
 
     except Exception as e:
         log_message(f"Main execution error: {e}", level=xbmc.LOGERROR)
+
 
 if __name__ == '__main__':
     log_message("Starting application...")
