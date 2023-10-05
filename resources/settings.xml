@@ -7,7 +7,7 @@
             
             <setting id="master_encoder_url" type="text" label="Master Encoder URL" default="http://example.com" help="Provide the streaming URL for the associated master encoder." />
             
-            <setting id="server_port" type="number" label="Server Port" default="9191" help="Specify the port number for the server connection." />
+            <setting id="server_port" type="numeric" label="Server Port" default="9191" help="Specify the port number for the server connection." />
         </category>
         
         <!-- Slave Configurations -->
