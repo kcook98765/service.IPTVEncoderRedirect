@@ -12,17 +12,7 @@ import time
 import threading
 import sqlite3
 
-from database_helper import (
-    create_database, populate_kodi_boxes, query_database, 
-    modify_database, store_address, store_link,
-    insert_into_active_streams, update_active_stream_status,
-    truncate_addresses_table
-)
 
-from kodi_rpc import (
-    send_jsonrpc, stop_kodi_playback, get_encoder_url_for_link, 
-    get_available_kodi_box
-)
 
 ENABLE_LOGGING = True # FALSE to shut off
 
@@ -36,6 +26,20 @@ if not os.path.exists(profilePath):
     os.makedirs(profilePath)
 
 DATABASE_NAME = xbmcvfs.translatePath(os.path.join(profilePath, 'IPTVEncoderRedirect_data.db'))
+
+
+
+from database_helper import (
+    create_database, populate_kodi_boxes, query_database, 
+    modify_database, store_address, store_link,
+    insert_into_active_streams, update_active_stream_status,
+    truncate_addresses_table
+)
+
+from kodi_rpc import (
+    send_jsonrpc, stop_kodi_playback, get_encoder_url_for_link, 
+    get_available_kodi_box
+)
 
 
 

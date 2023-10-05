@@ -43,6 +43,7 @@ def stop_kodi_playback(kodi_ip):
     send_jsonrpc(payload, f"http://{kodi_ip}:8080/jsonrpc")
 
 def get_encoder_url_for_link(link):
+    global KODI_BOXES
     rows = query_database(
         'SELECT IP FROM active_streams WHERE link = ? AND status = "Active"',
         (link,)
@@ -54,6 +55,7 @@ def get_encoder_url_for_link(link):
     return None
 
 def get_available_kodi_box():
+    global KODI_BOXES
     rows = query_database(
         'SELECT IP FROM active_streams WHERE status = "Inactive"'
     )

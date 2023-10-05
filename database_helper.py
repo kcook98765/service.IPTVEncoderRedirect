@@ -3,6 +3,7 @@ import xbmc
 
 
 def create_database():
+    global DATABASE_NAME
     conn = sqlite3.connect(DATABASE_NAME)
     c = conn.cursor()
     
@@ -43,6 +44,8 @@ def create_database():
     conn.close()
 
 def populate_kodi_boxes():
+    global DATABASE_NAME
+    global KODI_BOXES
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         c = conn.cursor()
@@ -60,6 +63,7 @@ def populate_kodi_boxes():
 
    
 def query_database(sql, parameters=()):
+    global DATABASE_NAME
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         c = conn.cursor()
@@ -72,6 +76,7 @@ def query_database(sql, parameters=()):
         return []
 
 def modify_database(sql, parameters=()):
+    global DATABASE_NAME
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         c = conn.cursor()
@@ -107,6 +112,7 @@ def update_active_stream_status(id, status):
     )
 
 def truncate_addresses_table():
+    global DATABASE_NAME
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         c = conn.cursor()
