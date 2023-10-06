@@ -234,10 +234,35 @@ def cleanup_stale_entries():
                     log_message(f"Closing stale active links {active_links[link]}", level=xbmc.LOGERROR)
                     del active_links[link]
 
+class FinishMixin:
+    def finish(self):
+        # Client disconnection is handled here
+        global proxy_clients, active_links, KODI_BOXES
+        with proxy_clients_lock:  # Acquire the lock
+            if self.associated_kodi and self.client_address in proxy_clients.get(self.associated_kodi, set()):
+                proxy_clients[self.associated_kodi].remove(self.client_address)
+                
+                # If no more clients are accessing the proxy for the Kodi box, shut it down and stop playback on the Kodi box.
+                if not proxy_clients[self.associated_kodi]:
+                    kodi_box_to_stop = None
+                    with active_links_lock:
+                        for link, box_ip in active_links.items():
+                            if box_ip == self.associated_kodi:
+                                del active_links[link]
+                                # Find the Kodi box associated with this IP
+                                for box in KODI_BOXES:
+                                    if box["IP"] == self.associated_kodi:
+                                        kodi_box_to_stop = box
+                                        break
+                                break
+                    
+                    if kodi_box_to_stop:
+                        stop_kodi_playback(kodi_box_to_stop)
+    
+        super().finish()
 
 
-
-class ProxyHandler(BaseHTTPRequestHandler):
+class ProxyHandler(FinishMixin, BaseHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         self.encoder_connection = None
         self.associated_kodi = None
@@ -272,32 +297,6 @@ class ProxyHandler(BaseHTTPRequestHandler):
             if self.encoder_connection:
                 self.encoder_connection.close()
                 log_message("Encoder connection closed.")
-
-    def finish(self):
-        # Client disconnection is handled here
-        global proxy_clients, active_links, KODI_BOXES
-        with proxy_clients_lock:  # Acquire the lock
-            if self.associated_kodi and self.client_address in proxy_clients.get(self.associated_kodi, set()):
-                proxy_clients[self.associated_kodi].remove(self.client_address)
-                
-                # If no more clients are accessing the proxy for the Kodi box, shut it down and stop playback on the Kodi box.
-                if not proxy_clients[self.associated_kodi]:
-                    kodi_box_to_stop = None
-                    with active_links_lock:
-                        for link, box_ip in active_links.items():
-                            if box_ip == self.associated_kodi:
-                                del active_links[link]
-                                # Find the Kodi box associated with this IP
-                                for box in KODI_BOXES:
-                                    if box["IP"] == self.associated_kodi:
-                                        kodi_box_to_stop = box
-                                        break
-                                break
-                    
-                    if kodi_box_to_stop:
-                        stop_kodi_playback(kodi_box_to_stop)
-    
-    super(ProxyHandler, self).finish()
 
     def do_GET(self):
         global active_proxies, active_links
