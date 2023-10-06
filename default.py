@@ -26,6 +26,31 @@ def log_message(message, level=xbmc.LOGDEBUG):
     if ENABLE_LOGGING or level == xbmc.LOGERROR:
         xbmc.log(message, level=level)
 
+def send_jsonrpc(kodi_url, payload):
+    if kodi_url == "local":
+        # Use xbmc.executeJSONRPC for local Kodi
+        try:
+            command = json.dumps(payload)
+            response_json = xbmc.executeJSONRPC(command)
+            return json.loads(response_json)
+        except Exception as e:
+            # Handle exceptions for local Kodi here.
+            # You can log the error or handle it according to your application's needs.
+            return None
+    else:
+        # Make a remote JSON-RPC request to a Kodi box using urllib
+        try:
+            request_url = f"{kodi_url}/jsonrpc"
+            request_data = json.dumps(payload).encode('utf-8')
+            request = urllib.request.Request(request_url, data=request_data, headers={'Content-Type': 'application/json'})
+            response = urllib.request.urlopen(request)
+            response_json = response.read().decode('utf-8')
+            return json.loads(response_json)
+        except Exception as e:
+            # Handle exceptions for remote Kodi here.
+            # You can log the error or handle it according to your application's needs.
+            return None
+
 
 def find_available_port(start_port, end_port):
     for port in range(start_port, end_port + 1):
@@ -131,61 +156,24 @@ def get_encoder_url_for_link(link):
 
 
 def get_available_kodi_box(link):
-    with active_links_lock:
-        # Return the Kodi box if it's already playing the link
-        if link in active_links:
-            for box in KODI_BOXES:
-                if box["IP"] == active_links[link]:
-                    return box
-        else:
-            # Find an available Kodi box
-            for box in KODI_BOXES:
-                if box["Status"] == "IDLE":
-                    box["Status"] = "PLAYING"  # Mark the box as PLAYING
-                    active_links[link] = box["IP"]
-                    return box
+    # Find an available Kodi box
+    for box in KODI_BOXES:
+        if box.status == "IDLE":
+            box.status = "PLAYING"  # Mark the box as PLAYING
+            if link:
+                active_links[link] = box.ip
+            return box
     return None
 
-
-def start_kodi_playback(kodi_box, link):
-    log_message(f"Starting playback on Kodi box with IP: {kodi_box['IP']} for {link}", level=xbmc.LOGDEBUG)
-    payload = {
-        "jsonrpc": "2.0",
-        "method": "Player.Open",
-        "params": {
-            "item": {
-                "file": link
-            }
-        },
-        "id": 1
-    }
-    kodi_url = "local" if kodi_box["Actor"] == "Master" else f"http://{kodi_box['IP']}:8080/jsonrpc"
-    response_json = send_jsonrpc(kodi_url, payload)
-    if response_json and 'error' in response_json:
-        log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
-        # Handle the error, maybe raise an exception or return an error flag.
-
-
-def stop_kodi_playback(kodi_box_ip):
-    # Send a command to stop playback on the specified Kodi box.
-    log_message(f"Stopping playback on Kodi box with IP: {kodi_box['IP']}", level=xbmc.LOGDEBUG)
-    payload = {
-        "jsonrpc": "2.0",
-        "method": "Player.Stop",
-        "params": {
-            "playerid": 1
-        },
-        "id": 1
-    }
-    kodi_url = "local" if kodi_box["Actor"] == "Master" else f"http://{kodi_box['IP']}:8080/jsonrpc"
-    response_json = send_jsonrpc(kodi_url, payload)
-    if response_json and 'error' in response_json:
-        log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
-    # After successfully stopping playback, mark the box as IDLE
-    for box in KODI_BOXES:
-        if box["IP"] == kodi_box_ip:
-            box["Status"] = "IDLE"
-            break
+def stop_kodi_playback(kodi_box):
+    # Stop playback on the specified Kodi box
+    kodi_box.stop_playback()
+    with active_links_lock:
+        for link, box_ip in active_links.items():
+            if box_ip == kodi_box.ip:
+                del active_links[link]
+                break
+    kodi_box.mark_idle()
 
 def cleanup_stale_entries():
     global active_proxies, proxy_clients, active_links, last_accessed_links
@@ -262,22 +250,31 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 self.encoder_connection.close()
                 log_message("Encoder connection closed.")
 
-    def finish(self):
-        # Client disconnection is handled here
-        global proxy_clients, active_links
-        with proxy_clients_lock:  # Acquire the lock
-            if self.associated_kodi and self.client_address in proxy_clients.get(self.associated_kodi, set()):
-                proxy_clients[self.associated_kodi].remove(self.client_address)
+def finish(self):
+    # Client disconnection is handled here
+    global proxy_clients, active_links, KODI_BOXES
+    with proxy_clients_lock:  # Acquire the lock
+        if self.associated_kodi and self.client_address in proxy_clients.get(self.associated_kodi, set()):
+            proxy_clients[self.associated_kodi].remove(self.client_address)
+            
+            # If no more clients are accessing the proxy for the Kodi box, shut it down and stop playback on the Kodi box.
+            if not proxy_clients[self.associated_kodi]:
+                kodi_box_to_stop = None
+                with active_links_lock:
+                    for link, box_ip in active_links.items():
+                        if box_ip == self.associated_kodi:
+                            del active_links[link]
+                            # Find the Kodi box associated with this IP
+                            for box in KODI_BOXES:
+                                if box["IP"] == self.associated_kodi:
+                                    kodi_box_to_stop = box
+                                    break
+                            break
                 
-                # If no more clients are accessing the proxy for the Kodi box, shut it down and stop playback on the Kodi box.
-                if not proxy_clients[self.associated_kodi]:
-                    stop_kodi_playback(self.associated_kodi)
-                    with active_links_lock:
-                        for link, box_ip in active_links.items():
-                            if box_ip == self.associated_kodi:
-                                del active_links[link]
-                                break
-        super().finish()
+                if kodi_box_to_stop:
+                    stop_kodi_playback(kodi_box_to_stop)
+
+    super().finish()
 
     def do_GET(self):
         global active_proxies, active_links
@@ -310,10 +307,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
                     # If no more clients are accessing this link, stop the Kodi box playing it
                     if not active_proxies[link]['clients']:
-                        stop_kodi_playback(active_links[link])
-                        del active_links[link]
-                        active_proxies[link]['encoder_connection'].close()
-                        del active_proxies[link]
+                        kodi_box_to_stop = get_available_kodi_box(link)
+                        if kodi_box_to_stop:
+                            stop_kodi_playback(kodi_box_to_stop)
+                            del active_links[link]
+                            active_proxies[link]['encoder_connection'].close()
+                            del active_proxies[link]
 
 class MyHandler(BaseHTTPRequestHandler):
 
@@ -410,6 +409,59 @@ class MyHandler(BaseHTTPRequestHandler):
             self.send_response(302)
             self.send_header('Location', proxy_url)
             self.end_headers()                
+
+To simplify the code related to starting and stopping the Kodi boxes, you can create a KodiBox class to encapsulate the logic for each Kodi box. This class can handle starting, stopping, and managing the status of the Kodi box. Here's an example of how you can refactor your code:
+
+python
+
+class KodiBox:
+    def __init__(self, actor, ip, encoder_url, proxy_port, server_port):
+        self.actor = actor
+        self.ip = ip
+        self.encoder_url = encoder_url
+        self.proxy_port = proxy_port
+        self.server_port = server_port
+        self.status = "IDLE"
+
+    def start_playback(self, link):
+        # Start playback on the Kodi box
+        log_message(f"Starting playback on Kodi box {self.actor} with IP: {self.ip} for {link}", level=xbmc.LOGDEBUG)
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "Player.Open",
+            "params": {
+                "item": {
+                    "file": link
+                }
+            },
+            "id": 1
+        }
+        kodi_url = "local" if self.actor == "Master" else f"http://{self.ip}:8080"
+        response_json = send_jsonrpc(kodi_url, payload)
+        if response_json and 'error' in response_json:
+            log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
+
+    def stop_playback(self):
+        # Stop playback on the Kodi box
+        log_message(f"Stopping playback on Kodi box {self.actor} with IP: {self.ip}", level=xbmc.LOGDEBUG)
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "Player.Stop",
+            "params": {
+                "playerid": 1
+            },
+            "id": 1
+        }
+        kodi_url = "local" if self.actor == "Master" else f"http://{self.ip}:8080"
+        response_json = send_jsonrpc(kodi_url, payload)
+        if response_json and 'error' in response_json:
+            log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
+
+    def mark_idle(self):
+        self.status = "IDLE"
+
+    def mark_playing(self):
+        self.status = "PLAYING"
 
 class MyMonitor(xbmc.Monitor):
     def __init__(self, main_httpd, proxy_servers):
