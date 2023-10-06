@@ -410,10 +410,6 @@ class MyHandler(BaseHTTPRequestHandler):
             self.send_header('Location', proxy_url)
             self.end_headers()                
 
-To simplify the code related to starting and stopping the Kodi boxes, you can create a KodiBox class to encapsulate the logic for each Kodi box. This class can handle starting, stopping, and managing the status of the Kodi box. Here's an example of how you can refactor your code:
-
-python
-
 class KodiBox:
     def __init__(self, actor, ip, encoder_url, proxy_port, server_port):
         self.actor = actor
