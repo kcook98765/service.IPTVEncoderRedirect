@@ -547,6 +547,7 @@ def run():
         log_message(f"Starting main server on IP {master_box['IP']} , port {master_box['Server_Port']}...")
         server_address = (master_box['IP'], master_box['Server_Port'])
         main_httpd = HTTPServer(server_address, MyHandler)
+        main_httpd.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         # Create a dictionary to hold proxy servers for each KODI_BOX
         proxy_servers = {}
@@ -556,6 +557,7 @@ def run():
             log_message(f"Starting proxy server for {box['Actor']} on port {proxy_port}...")
             proxy_address = ('', proxy_port)
             proxy_httpd = ThreadingHTTPServer(proxy_address, ProxyHandler)
+            proxy_httpd.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             proxy_servers[proxy_port] = proxy_httpd
 
         monitor = MyMonitor(main_httpd, proxy_servers)
