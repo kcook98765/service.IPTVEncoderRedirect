@@ -36,9 +36,6 @@ def release_ports(ports_to_release):
         except (socket.error, OSError):
             pass
 
-ports_to_release = [9191, 9192]  # Add the ports you want to release
-release_ports(ports_to_release)
-
 def send_jsonrpc(kodi_url, payload):
     if kodi_url == "local":
         # Use xbmc.executeJSONRPC for local Kodi
@@ -101,41 +98,37 @@ def initialize_kodi_boxes():
             master_server_port = None
 
         if master_server_port is not None:
+            master_encoder_url = ADDON.getSetting('master_encoder_url')
             kodi_boxes.append({
                 "Actor": "Master",
                 "IP": xbmc.getIPAddress(),
-                "Encoder_URL": 'http://192.168.2.168/0.ts',
+                "Encoder_URL": master_encoder_url,
                 "Status": "IDLE",
                 "Proxy_Port": master_proxy_port,
                 "Server_Port": master_server_port,
             })
 
     # Slave Kodi instance(s)
-    slave_settings = [
-        {
-            "ip_setting": "slave_1_ip",
-            "encoder_url_setting": "slave_1_encoder_url"
-        },
-        # Add more slave settings as needed
-    ]
-
-    for i, settings in enumerate(slave_settings, start=1):
-        ip_setting = settings["ip_setting"]
-        encoder_url_setting = settings["encoder_url_setting"]
+    for i in range(1, 4):  # Adjust the range according to the number of slave settings in your settings.xml
+        ip_setting = ADDON.getSetting(f"slave_{i}_ip")
+        encoder_url_setting = ADDON.getSetting(f"slave_{i}_encoder_url")
         
-        slave_proxy_port = find_available_port(start_port, end_port)
-        if slave_proxy_port is None:
-            log_message(f"No available port found for Slave {i} Kodi proxy.", level=xbmc.LOGERROR)
-        else:
-            kodi_boxes.append({
-                "Actor": f"Slave {i}",
-                "IP": ADDON.getSetting(ip_setting),
-                "Encoder_URL": ADDON.getSetting(encoder_url_setting),
-                "Status": "IDLE",
-                "Proxy_Port": slave_proxy_port,
-            })
+        # Check if the IP setting is not "0.0.0.0" before adding the slave Kodi box
+        if ip_setting and ip_setting != "0.0.0.0" and encoder_url_setting:
+            slave_proxy_port = find_available_port(start_port, end_port)
+            if slave_proxy_port is None:
+                log_message(f"No available port found for Slave {i} Kodi proxy.", level=xbmc.LOGERROR)
+            else:
+                kodi_boxes.append({
+                    "Actor": f"Slave {i}",
+                    "IP": ip_setting,
+                    "Encoder_URL": encoder_url_setting,
+                    "Status": "IDLE",
+                    "Proxy_Port": slave_proxy_port,
+                })
 
     return kodi_boxes
+
 
 KODI_BOXES = initialize_kodi_boxes()
 
