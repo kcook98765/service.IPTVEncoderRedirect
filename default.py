@@ -86,6 +86,27 @@ def is_port_available(port):
     except (socket.error, OSError):
         return False
 
+shutdown_socket_server_event = threading.Event()
+
+
+def start_socket_server(proxy_port, target_host, target_port):
+    if shutdown_socket_server_event.is_set():
+        return
+
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(("", proxy_port))
+    server_socket.listen(5)
+
+    log_message(f"Raw socket server listening on port {proxy_port}")
+
+    while not shutdown_socket_server_event.is_set():
+        client_socket, addr = server_socket.accept()
+        log_message(f"Accepted connection from {addr[0]}:{addr[1]}")
+        threading.Thread(target=handle_client, args=(client_socket, target_host, target_port)).start()
+
+    server_socket.close()
+
+
 class KodiBox:
     def __init__(self, actor, ip, encoder_url, proxy_port, server_port):
         self.actor = actor
@@ -95,14 +116,6 @@ class KodiBox:
         self.server_port = server_port
         self.status = "IDLE"
         self.socket_server_thread = None
-
-    def start_socket_server(self):
-        if self.socket_server_thread and self.socket_server_thread.is_alive():
-            log_message("Socket server is already running.", level=xbmc.LOGWARNING)
-            return
-
-        self.socket_server_thread = threading.Thread(target=start_socket_server, args=(self.proxy_port, self.ip, self.server_port))
-        self.socket_server_thread.start()
 
 
     def stop_socket_server(self):
@@ -148,7 +161,8 @@ class KodiBox:
 
     def mark_idle(self):
         self.status = "IDLE"
-        self.start_socket_server()
+        # Call the module-level start_socket_server function
+        start_socket_server(self.proxy_port, self.ip, self.server_port)
 
     def mark_playing(self):
         self.status = "PLAYING"
@@ -310,25 +324,7 @@ def handle_client(client_socket, target_host, target_port):
         log_message(f"Error while handling client: {str(e)}", level=xbmc.LOGERROR)
 
 
-shutdown_socket_server_event = threading.Event()
 
-
-def start_socket_server(proxy_port, target_host, target_port):
-    if shutdown_socket_server_event.is_set():
-        return
-
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind(("", proxy_port))
-    server_socket.listen(5)
-
-    log_message(f"Raw socket server listening on port {proxy_port}")
-
-    while not shutdown_socket_server_event.is_set():
-        client_socket, addr = server_socket.accept()
-        log_message(f"Accepted connection from {addr[0]}:{addr[1]}")
-        threading.Thread(target=handle_client, args=(client_socket, target_host, target_port)).start()
-
-    server_socket.close()
 
 
 
