@@ -26,6 +26,19 @@ def log_message(message, level=xbmc.LOGDEBUG):
     if ENABLE_LOGGING or level == xbmc.LOGERROR:
         xbmc.log(message, level=level)
 
+def release_ports(ports_to_release):
+    for port in ports_to_release:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                s.bind(("localhost", port))
+                s.close()
+        except (socket.error, OSError):
+            pass
+
+ports_to_release = [9191, 9192]  # Add the ports you want to release
+release_ports(ports_to_release)
+
 def send_jsonrpc(kodi_url, payload):
     if kodi_url == "local":
         # Use xbmc.executeJSONRPC for local Kodi
@@ -158,12 +171,13 @@ def get_encoder_url_for_link(link):
 def get_available_kodi_box(link):
     # Find an available Kodi box
     for box in KODI_BOXES:
-        if box.status == "IDLE":
-            box.status = "PLAYING"  # Mark the box as PLAYING
+        if box["Status"] == "IDLE":
+            box["Status"] = "PLAYING"  # Mark the box as PLAYING
             if link:
-                active_links[link] = box.ip
+                active_links[link] = box["IP"]
             return box
     return None
+
 
 def stop_kodi_playback(kodi_box):
     # Stop playback on the specified Kodi box
@@ -528,6 +542,10 @@ def run():
 
     except Exception as e:
         log_message(f"Main execution error: {e}", level=xbmc.LOGERROR)
+
+    finally:
+        # Release all ports before exiting
+        release_ports([box['Proxy_Port'] for box in KODI_BOXES] + [master_box['Server_Port']])
 
 
 if __name__ == '__main__':
