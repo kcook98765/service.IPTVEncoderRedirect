@@ -301,8 +301,16 @@ class ProxyHandler(FinishMixin, BaseHTTPRequestHandler):
             client_headers = {key: value for key, value in self.headers.items()}
     
             # Using the modified function to get the encoder connection directly
+            log_message(f"Attempting connection to encoder for link: {link} with headers: {client_headers}")
+
             self.encoder_connection = get_encoder_url_for_link(link, headers=client_headers)
+            if not self.encoder_connection:
+                log_message("Encoder connection not established.")
+                return
+                
             log_message(f"Connection established to encoder for link: {link}")
+            log_message(f"Encoder headers: {self.encoder_connection.getheaders()}")
+
     
             # Copy headers from the encoder to the client
             self.copy_headers_from_encoder()
@@ -313,8 +321,13 @@ class ProxyHandler(FinishMixin, BaseHTTPRequestHandler):
                 self.wfile.write(chunk)
                 chunk = self.encoder_connection.read(4096)
 
+        except HTTPError as he:
+            log_message(f"HTTP Error during proxying for link {link}: {he.code} - {he.reason}", level=xbmc.LOGERROR)
+        except URLError as ue:
+            log_message(f"URL Error during proxying for link {link}: {ue.reason}", level=xbmc.LOGERROR)
         except Exception as e:
-            log_message(f"Proxy error for link {link}: {e}", level=xbmc.LOGERROR)
+            log_message(f"Proxy error for link {link}: {type(e).__name__} - {e}", level=xbmc.LOGERROR)
+
 
         finally:
             if self.encoder_connection:
