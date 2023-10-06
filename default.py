@@ -27,10 +27,10 @@ def signal_handler(signum, frame):
     shutting_down = True
     log_message("Received shutdown signal. Initiating graceful shutdown...")
 
-# Register signal handlers
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
-
+if isinstance(threading.current_thread(), threading._MainThread):
+    # Register signal handlers
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
 def release_ports(ports_to_release):
     for port in ports_to_release:
