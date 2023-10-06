@@ -268,6 +268,25 @@ class ProxyHandler(FinishMixin, BaseHTTPRequestHandler):
         self.associated_kodi = None
         super().__init__(*args, **kwargs)
 
+    def log_request_headers(self):
+        log_message("Received headers from client:")
+        for key in self.headers:
+            log_message(f"{key}: {self.headers[key]}")
+
+    def log_response_headers(self, headers):
+        log_message("Sending headers to client:")
+        for key, value in headers.items():
+            log_message(f"{key}: {value}")
+
+
+    def copy_headers_from_encoder(self):
+        headers = {}
+        for key, value in self.encoder_connection.getheaders():
+            headers[key] = value
+            self.send_header(key, value)
+        self.end_headers()
+        self.log_response_headers(headers)
+
     def handle_proxy_request(self, link):
         global proxy_clients
         
@@ -283,6 +302,9 @@ class ProxyHandler(FinishMixin, BaseHTTPRequestHandler):
             # Open a connection to the encoder
             self.encoder_connection = urlopen(encoder_url)
             log_message(f"Connection established to encoder: {encoder_url}")
+
+            # Copy headers from the encoder to the client
+            self.copy_headers_from_encoder()
 
             # While we're reading data from the encoder, write to client
             chunk = self.encoder_connection.read(4096)
@@ -300,6 +322,10 @@ class ProxyHandler(FinishMixin, BaseHTTPRequestHandler):
 
     def do_GET(self):
         global active_proxies, active_links
+        
+        # Log the request headers
+        self.log_request_headers()
+        
         parsed_path = urlparse(self.path)
         log_message(f"Proxy path is {parsed_path}")
         if parsed_path.path == '/proxy':
