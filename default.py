@@ -86,6 +86,73 @@ def is_port_available(port):
     except (socket.error, OSError):
         return False
 
+class KodiBox:
+    def __init__(self, actor, ip, encoder_url, proxy_port, server_port):
+        self.actor = actor
+        self.ip = ip
+        self.encoder_url = encoder_url
+        self.proxy_port = proxy_port
+        self.server_port = server_port
+        self.status = "IDLE"
+        self.socket_server_thread = None
+
+    def start_socket_server(self):
+        if hasattr(self, 'socket_server_thread') and self.socket_server_thread.is_alive():
+            log_message("Socket server is already running.", level=xbmc.LOGWARNING)
+            return
+
+        self.socket_server_thread = threading.Thread(target=start_socket_server, args=(self.proxy_port, self.ip, self.server_port))
+        self.socket_server_thread.start()
+
+    def stop_socket_server(self):
+        global shutdown_socket_server_event
+        shutdown_socket_server_event.set()
+
+        if self.socket_server_thread and self.socket_server_thread.is_alive():
+            self.socket_server_thread.join()
+
+    def start_playback(self, link):
+        # Start playback on the Kodi box
+        log_message(f"Starting playback on Kodi box {self.actor} with IP: {self.ip} for {link}", level=xbmc.LOGDEBUG)
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "Player.Open",
+            "params": {
+                "item": {
+                    "file": link
+                }
+            },
+            "id": 1
+        }
+        kodi_url = "local" if self.actor == "Master" else f"http://{self.ip}:8080"
+        response_json = send_jsonrpc(kodi_url, payload)
+        if response_json and 'error' in response_json:
+            log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
+
+    def stop_playback(self):
+        # Stop playback on the Kodi box
+        log_message(f"Stopping playback on Kodi box {self.actor} with IP: {self.ip}", level=xbmc.LOGDEBUG)
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "Player.Stop",
+            "params": {
+                "playerid": 1
+            },
+            "id": 1
+        }
+        kodi_url = "local" if self.actor == "Master" else f"http://{self.ip}:8080"
+        response_json = send_jsonrpc(kodi_url, payload)
+        if response_json and 'error' in response_json:
+            log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
+
+    def mark_idle(self):
+        self.status = "IDLE"
+        self.start_socket_server()
+
+    def mark_playing(self):
+        self.status = "PLAYING"
+        self.stop_socket_server()
+
 def initialize_kodi_boxes():
     start_port = 49152  # Start of dynamic/private port range
     end_port = 65535    # End of dynamic/private port range
@@ -364,73 +431,6 @@ class MyHandler(BaseHTTPRequestHandler):
             self.send_response(302)
             self.send_header('Location', proxy_url)
             self.end_headers()                
-
-class KodiBox:
-    def __init__(self, actor, ip, encoder_url, proxy_port, server_port):
-        self.actor = actor
-        self.ip = ip
-        self.encoder_url = encoder_url
-        self.proxy_port = proxy_port
-        self.server_port = server_port
-        self.status = "IDLE"
-        self.socket_server_thread = None
-
-    def start_socket_server(self):
-        if hasattr(self, 'socket_server_thread') and self.socket_server_thread.is_alive():
-            log_message("Socket server is already running.", level=xbmc.LOGWARNING)
-            return
-
-        self.socket_server_thread = threading.Thread(target=start_socket_server, args=(self.proxy_port, self.ip, self.server_port))
-        self.socket_server_thread.start()
-
-    def stop_socket_server(self):
-        global shutdown_socket_server_event
-        shutdown_socket_server_event.set()
-
-        if self.socket_server_thread and self.socket_server_thread.is_alive():
-            self.socket_server_thread.join()
-
-    def start_playback(self, link):
-        # Start playback on the Kodi box
-        log_message(f"Starting playback on Kodi box {self.actor} with IP: {self.ip} for {link}", level=xbmc.LOGDEBUG)
-        payload = {
-            "jsonrpc": "2.0",
-            "method": "Player.Open",
-            "params": {
-                "item": {
-                    "file": link
-                }
-            },
-            "id": 1
-        }
-        kodi_url = "local" if self.actor == "Master" else f"http://{self.ip}:8080"
-        response_json = send_jsonrpc(kodi_url, payload)
-        if response_json and 'error' in response_json:
-            log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
-
-    def stop_playback(self):
-        # Stop playback on the Kodi box
-        log_message(f"Stopping playback on Kodi box {self.actor} with IP: {self.ip}", level=xbmc.LOGDEBUG)
-        payload = {
-            "jsonrpc": "2.0",
-            "method": "Player.Stop",
-            "params": {
-                "playerid": 1
-            },
-            "id": 1
-        }
-        kodi_url = "local" if self.actor == "Master" else f"http://{self.ip}:8080"
-        response_json = send_jsonrpc(kodi_url, payload)
-        if response_json and 'error' in response_json:
-            log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
-
-    def mark_idle(self):
-        self.status = "IDLE"
-        self.start_socket_server()
-
-    def mark_playing(self):
-        self.status = "PLAYING"
-        self.stop_socket_server()
 
 class MyMonitor(xbmc.Monitor):
     def __init__(self, main_httpd, proxy_servers):
