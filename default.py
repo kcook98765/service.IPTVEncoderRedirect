@@ -97,12 +97,13 @@ class KodiBox:
         self.socket_server_thread = None
 
     def start_socket_server(self):
-        if hasattr(self, 'socket_server_thread') and self.socket_server_thread.is_alive():
+        if self.socket_server_thread and self.socket_server_thread.is_alive():
             log_message("Socket server is already running.", level=xbmc.LOGWARNING)
             return
 
         self.socket_server_thread = threading.Thread(target=start_socket_server, args=(self.proxy_port, self.ip, self.server_port))
         self.socket_server_thread.start()
+
 
     def stop_socket_server(self):
         global shutdown_socket_server_event
@@ -389,13 +390,13 @@ class MyHandler(BaseHTTPRequestHandler):
     def transform_playlist_content(self, content):
         lines = content.split('\n')
         new_lines = []
-        master_box = get_master_kodi_box()
+        master_kodi_box = get_master_kodi_box()
         if not master_box:
             raise Exception("Master Kodi box not found!")
         for line in lines:
             if line.startswith('plugin://'):
                 encoded_line = quote(line, safe='')
-                new_url = f"http://{master_box['IP']}:{master_box['Server_Port']}/play?link={encoded_line}"
+                new_url = f"http://{master_box.ip}:{master_box.server_port}/play?link={encoded_line}"
                 new_lines.append(new_url)
             else:
                 new_lines.append(line)
@@ -423,7 +424,7 @@ class MyHandler(BaseHTTPRequestHandler):
                     return
             with last_accessed_links_lock:
                 last_accessed_links[link] = datetime.datetime.now()
-            master_box = get_master_kodi_box()
+            master_kodi_box = get_master_kodi_box()
             if not master_box:
                 raise Exception("Master Kodi box not found!")
             proxy_url = f"http://{master_box.ip}:{master_box.proxy_port}/proxy?link={quote(link)}"
@@ -454,14 +455,14 @@ def run():
         log_message("Starting server...")
         
         # Main server (synchronous)
-        master_box = get_master_kodi_box()
+        master_kodi_box = get_master_kodi_box()
         if not master_box:
             xbmcgui.Dialog().ok("Error", "Master Kodi settings not found or set correctly. Addon will be disabled.")
             xbmcaddon.Addon().setSetting("enabled", "false")  # Disable the addon
             return
         
-        log_message(f"Starting main server on IP {master_box['IP']} , port {master_box['Server_Port']}...")
-        server_address = (master_box['IP'], master_box['Server_Port'])
+        log_message(f"Starting main server on IP {master_box.ip} , port {master_box.server_port}...")
+        server_address = (master_box.ip, master_box.server_port)
         main_httpd = HTTPServer(server_address, MyHandler)
         main_httpd.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
@@ -497,7 +498,7 @@ def run():
         if main_future:
             main_future.cancel()
 
-        release_ports([box.proxy_port for box in KODI_BOXES] + [master_box['Server_Port']])
+        release_ports([box.proxy_port for box in KODI_BOXES] + [master_box.server_port])
         log_message("Graceful shutdown completed.")
 
 
