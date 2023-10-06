@@ -27,11 +27,6 @@ def signal_handler(signum, frame):
     shutting_down = True
     log_message("Received shutdown signal. Initiating graceful shutdown...")
 
-if isinstance(threading.current_thread(), threading._MainThread):
-    # Register signal handlers
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
-
 def release_ports(ports_to_release):
     for port in ports_to_release:
         log_message(f"Release port: {port}", level=xbmc.LOGERROR)
@@ -492,27 +487,24 @@ def run():
         log_message(f"Main execution error: {e}", level=xbmc.LOGERROR)
 
     finally:
-        # Enhance the shutdown sequence here
         log_message("Initiating graceful shutdown sequence...")
 
-        # 1. Signal all running threads to stop
         global shutdown_socket_server_event
         shutdown_socket_server_event.set()
-        
-        # 2. Wait for threads to finish
+
         if cleanup_future:
             cleanup_future.cancel()
         if main_future:
             main_future.cancel()
 
-        # 3. Release resources
-        # This includes closing any open files, network connections, etc.
         release_ports([box['Proxy_Port'] for box in KODI_BOXES] + [master_box['Server_Port']])
-        
         log_message("Graceful shutdown completed.")
 
 
 if __name__ == '__main__':
+    # Register signal handlers
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
     log_message("Starting application...")
     run()
     log_message("Application terminated.")
