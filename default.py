@@ -363,13 +363,6 @@ class MyHandler(BaseHTTPRequestHandler):
         except URLError as e:
             self.handle_error(e)
 
-    def handle_play_request(self, parsed_path):
-        log_message("Received play request.")
-        with play_request_lock:
-            query_params = parse_qs(parsed_path.query)
-            link = query_params.get('link', [''])[0]
-            self.process_play_request(link)
-
     def fetch_content(self, url):
         response = urlopen(url)
         return response.read().decode('utf-8')
@@ -389,7 +382,7 @@ class MyHandler(BaseHTTPRequestHandler):
                 new_lines.append(line)
         return '\n'.join(new_lines)
 
-    def process_play_request(self, link):
+    def handle_play_request(self, link):
         log_message("Received play request.")
         with play_request_lock:
             available_kodi_box = get_available_kodi_box(link)
