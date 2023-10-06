@@ -1,10 +1,10 @@
 import xbmc, xbmcaddon, xbmcvfs, xbmcgui
 import os, json, time, threading, datetime, socket
-import traceback
-from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+import traceback, signal
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import urlopen, Request
-from urllib.error import URLError, HTTPError
+from urllib.error import URLError
 from concurrent.futures import ThreadPoolExecutor
 
 ADDON = xbmcaddon.Addon()
@@ -14,16 +14,23 @@ MAX_LINK_IDLE_TIME_SECONDS = 3600 * 1  # Remove links that have been idle for 1 
 
 # Add an additional dictionary to track the last access time of each link.
 last_accessed_links = {}
-last_accessed_links_lock = threading.Lock()
-
-# master_ip = ADDON.getSetting('master_ip')
-# master_encoder_url = ADDON.getSetting('master_encoder_url')
-
+active_links_lock = threading.Lock()
+shutting_down = False
 assigned_ports = []
 
 def log_message(message, level=xbmc.LOGDEBUG):
     if ENABLE_LOGGING or level == xbmc.LOGERROR:
         xbmc.log(message, level=xbmc.LOGERROR)
+
+def signal_handler(signum, frame):
+    global shutting_down
+    shutting_down = True
+    log_message("Received shutdown signal. Initiating graceful shutdown...")
+
+# Register signal handlers
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
 
 def release_ports(ports_to_release):
     for port in ports_to_release:
@@ -103,14 +110,8 @@ def initialize_kodi_boxes():
 
         if master_server_port is not None:
             master_encoder_url = ADDON.getSetting('master_encoder_url')
-            kodi_boxes.append({
-                "Actor": "Master",
-                "IP": xbmc.getIPAddress(),
-                "Encoder_URL": master_encoder_url,
-                "Status": "IDLE",
-                "Proxy_Port": master_proxy_port,
-                "Server_Port": master_server_port,
-            })
+            master_kodi_box = KodiBox("Master", xbmc.getIPAddress(), master_encoder_url, master_proxy_port, master_server_port)
+            kodi_boxes.append(master_kodi_box)
 
     # Slave Kodi instance(s)
     for i in range(1, 4):  # Adjust the range according to the number of slave settings in your settings.xml
@@ -124,13 +125,12 @@ def initialize_kodi_boxes():
                 log_message(f"No available port found for Slave {i} Kodi proxy.", level=xbmc.LOGERROR)
             else:
                 log_message(f"Setup slave {ip_setting} using encoder {encoder_url_setting} with local proxy port {slave_proxy_port}")
-                kodi_boxes.append({
-                    "Actor": f"Slave {i}",
-                    "IP": ip_setting,
-                    "Encoder_URL": encoder_url_setting,
-                    "Status": "IDLE",
-                    "Proxy_Port": slave_proxy_port,
-                })
+                slave_kodi_box = KodiBox(f"Slave {i}", ip_setting, encoder_url_setting, slave_proxy_port, None)  # Create KodiBox instance
+                kodi_boxes.append(slave_kodi_box)
+
+    for box in kodi_boxes:
+        if box["Status"] == "IDLE":
+            box.start_socket_server()
 
     return kodi_boxes
 
@@ -142,18 +142,15 @@ play_request_lock = threading.Lock()
 active_proxies = {}  # Dictionary to maintain active proxies per link
 active_proxies_lock = threading.Lock()
 
-proxy_clients = {}  # Dictionary to maintain active clients for each proxy
-proxy_clients_lock = threading.Lock()
-
 active_links = {} # link: kodi_box_info
 active_links_lock = threading.Lock()
 
 
 def get_master_kodi_box():
     for box in KODI_BOXES:
-        if box["Actor"] == "Master":
+        if box.actor == "Master":
             return box
-    return None  # Return None if no Master box is found
+    return None
 
 def get_encoder_url_for_link(link, headers={}):
     log_message(f"Lookup encoder url for link {link}", level=xbmc.LOGERROR)
@@ -161,11 +158,10 @@ def get_encoder_url_for_link(link, headers={}):
         kodi_ip = active_links.get(link)
         if kodi_ip:
             for box in KODI_BOXES:
-                if box["IP"] == kodi_ip:
-                    log_message(f"Found encoder url {box['Encoder_URL']}", level=xbmc.LOGERROR)
-                    encoder_url = box["Encoder_URL"]
-                    req = Request(encoder_url, headers=headers)
-                    return urlopen(req)
+                if box.ip == kodi_ip:
+                    encoder_url = box.encoder_url
+                    with urlopen(Request(encoder_url, headers=headers)) as response:  # Ensure the connection is closed
+                        return response
     log_message(f"Could not find Encoder_URL for link {link}", level=xbmc.LOGERROR)
     return None  # or some default encoder URL if you have one
 
@@ -174,11 +170,11 @@ def get_available_kodi_box(link):
     log_message(f"Look for available kodi box with link {link}", level=xbmc.LOGERROR)
     # Find an available Kodi box
     for box in KODI_BOXES:
-        if box["Status"] == "IDLE":
-            box["Status"] = "PLAYING"  # Mark the box as PLAYING
+        if box.status == "IDLE":
+            box.mark_playing()  # Mark the box as PLAYING using the method
             if link:
-                active_links[link] = box["IP"]
-            log_message(f"Found available kodi box with ip {box['IP']}", level=xbmc.LOGERROR)
+                active_links[link] = box.ip
+            log_message(f"Found available kodi box with ip {box.ip}", level=xbmc.LOGERROR)
             return box
     log_message(f"Not Found available kodi box", level=xbmc.LOGERROR)
     return None
@@ -196,7 +192,7 @@ def stop_kodi_playback(kodi_box):
     kodi_box.mark_idle()
 
 def cleanup_stale_entries():
-    global active_proxies, proxy_clients, active_links, last_accessed_links
+    global active_proxies, active_links, last_accessed_links
     
     while True:
         time.sleep(CLEANUP_INTERVAL_SECONDS)
@@ -225,179 +221,64 @@ def cleanup_stale_entries():
                     log_message(f"Closing stale proxy {active_proxies[link]['encoder_connection']}", level=xbmc.LOGERROR)
                     del active_proxies[link]
 
-        with proxy_clients_lock:
-            for link in stale_links:
-                if link in proxy_clients:
-                    log_message(f"Closing stale proxy clients {proxy_clients[link]}", level=xbmc.LOGERROR)
-                    del proxy_clients[link]
-
         with active_links_lock:
             for link in stale_links:
                 if link in active_links:
                     log_message(f"Closing stale active links {active_links[link]}", level=xbmc.LOGERROR)
                     del active_links[link]
 
-class FinishMixin:
-    def finish(self):
-        # Client disconnection is handled here
-        global proxy_clients, active_links, KODI_BOXES
-        with proxy_clients_lock:  # Acquire the lock
-            if self.associated_kodi and self.client_address in proxy_clients.get(self.associated_kodi, set()):
-                proxy_clients[self.associated_kodi].remove(self.client_address)
-                
-                # If no more clients are accessing the proxy for the Kodi box, shut it down and stop playback on the Kodi box.
-                if not proxy_clients[self.associated_kodi]:
-                    kodi_box_to_stop = None
-                    with active_links_lock:
-                        for link, box_ip in active_links.items():
-                            if box_ip == self.associated_kodi:
-                                del active_links[link]
-                                # Find the Kodi box associated with this IP
-                                for box in KODI_BOXES:
-                                    if box["IP"] == self.associated_kodi:
-                                        kodi_box_to_stop = box
-                                        break
-                                break
-                    
-                    if kodi_box_to_stop:
-                        stop_kodi_playback(kodi_box_to_stop)
-    
-        super().finish()
-
-
-class ProxyHandler(FinishMixin, BaseHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        self.encoder_connection = None
-        self.associated_kodi = None
-        super().__init__(*args, **kwargs)
-
-    def log_request_headers(self):
-        log_message("Received headers from client:")
-        for key in self.headers:
-            log_message(f"{key}: {self.headers[key]}")
-
-    def log_response_headers(self, headers):
-        log_message("Sending headers to client:")
-        for key, value in headers.items():
-            log_message(f"{key}: {value}")
-
-
-    def copy_headers_from_encoder(self):
-        headers = {}
-        for key, value in self.encoder_connection.getheaders():
-            headers[key] = value
-            self.send_header(key, value)
-        self.end_headers()
-        self.log_response_headers(headers)
-
-    def handle_proxy_request(self, link):
-        global proxy_clients
-        
-        log_message(f"Handling proxy request for link: {link}")
-        with last_accessed_links_lock:
-            last_accessed_links[link] = datetime.datetime.now()
-
-        try:
-            # Get the client headers and pass them to the encoder
-            client_headers = {key: value for key, value in self.headers.items()}
-    
-            # Using the modified function to get the encoder connection directly
-            log_message(f"Attempting connection to encoder for link: {link} with headers: {client_headers}")
-
-            self.encoder_connection = get_encoder_url_for_link(link, headers=client_headers)
-            if not self.encoder_connection:
-                log_message("Encoder connection not established.")
+def handle_client(client_socket, target_host, target_port):
+    try:
+        with client_socket:
+            request_data = client_socket.recv(1024)
+            if not request_data:
                 return
-            else:
-                log_message(f"Encoder response code: {self.encoder_connection.status}")
-                log_message(f"Encoder response reason: {self.encoder_connection.reason}")
-                log_message(f"Encoder response headers: {self.encoder_connection.getheaders()}")
 
-                
-            log_message(f"Connection established to encoder for link: {link}")
-            log_message(f"Encoder headers: {self.encoder_connection.getheaders()}")
-
-    
-            # Copy headers from the encoder to the client
-            self.copy_headers_from_encoder()
-
-            # While we're reading data from the encoder, write to client
-            chunk = self.encoder_connection.read(4096)
-            while chunk:
-                self.wfile.write(chunk)
-                chunk = self.encoder_connection.read(4096)
-
-        except HTTPError as he:
-            log_message(f"HTTP Error during proxying for link {link}: {he.code} - {he.reason}", level=xbmc.LOGERROR)
-        except URLError as ue:
-            log_message(f"URL Error during proxying for link {link}: {ue.reason}", level=xbmc.LOGERROR)
-        except Exception as e:
-            log_message(f"Proxy error for link {link}: {type(e).__name__} - {e}", level=xbmc.LOGERROR)
-            log_message(traceback.format_exc(), level=xbmc.LOGERROR)
+            with socket.create_connection((target_host, target_port)) as server_socket:
+                server_socket.send(request_data)
+                while True:
+                    response_data = server_socket.recv(4096)
+                    if not response_data:
+                        break
+                    client_socket.send(response_data)
+    except BrokenPipeError:
+        log_message("Client closed the connection before the response could be sent.")
+    except Exception as e:
+        log_message(f"Error while handling client: {str(e)}", level=xbmc.LOGERROR)
 
 
-        finally:
-            if self.encoder_connection:
-                self.encoder_connection.close()
-                log_message("Encoder connection closed.")
+shutdown_socket_server_event = threading.Event()
 
-    def do_GET(self):
-        global active_proxies, active_links
-        
-        # Log the request headers
-        self.log_request_headers()
-        
-        parsed_path = urlparse(self.path)
-        log_message(f"Proxy path is {parsed_path}")
-        if parsed_path.path == '/proxy':
-            link = parse_qs(parsed_path.query).get('link', [''])[0]
-            log_message(f"Proxy path link is {link}")
-            with active_proxies_lock:  # Assuming you've created this lock at the top
-                if link not in active_proxies:
-                    # Initialize this link's proxy info
-                    client_headers = {key: value for key, value in self.headers.items()}
-                    encoder_connection = get_encoder_url_for_link(link, headers=client_headers)
-                    log_message(f"Initialize this link's proxy encoder connection {encoder_connection}")
-                    active_proxies[link] = {
-                        'encoder_connection': encoder_connection,
-                        'clients': set()
-                    }
 
-                # Add current client to this link's clients
-                active_proxies[link]['clients'].add(self.client_address)
+def start_socket_server(proxy_port, target_host, target_port):
+    if shutdown_socket_server_event.is_set():
+        return
 
-                try:
-                    # Distribute data from the encoder to the client
-                    while True:
-                        chunk = active_proxies[link]['encoder_connection'].read(4096)
-                        if not chunk:
-                            break
-                        self.wfile.write(chunk)
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(("", proxy_port))
+    server_socket.listen(5)
 
-                except Exception as e:
-                    # Handle client disconnect or other errors
-                    error_message = f"Proxy handler error: {str(e)}"
-                    log_message(error_message, level=xbmc.LOGERROR)
-                    active_proxies[link]['clients'].remove(self.client_address)
+    log_message(f"Raw socket server listening on port {proxy_port}")
 
-                    # If no more clients are accessing this link, stop the Kodi box playing it
-                    if not active_proxies[link]['clients']:
-                        kodi_box_to_stop = get_available_kodi_box(link)
-                        if kodi_box_to_stop:
-                            stop_kodi_playback(kodi_box_to_stop)
-                            del active_links[link]
-                            active_proxies[link]['encoder_connection'].close()
-                            del active_proxies[link]
+    while not shutdown_socket_server_event.is_set():
+        client_socket, addr = server_socket.accept()
+        log_message(f"Accepted connection from {addr[0]}:{addr[1]}")
+        threading.Thread(target=handle_client, args=(client_socket, target_host, target_port)).start()
+
+    server_socket.close()
+
+
+
+
 
 class MyHandler(BaseHTTPRequestHandler):
 
-    def handle_error(self, e, error_message=None):
+    def handle_error(self, e):
         log_message(f"HTTP request handling error: {e}", level=xbmc.LOGERROR)
         self.send_response(500)
         self.send_header('Content-Type', 'text/plain')
         self.end_headers()
-        if error_message:
-            self.wfile.write(error_message.encode())
+        self.wfile.write(str(e).encode())
 
     def do_GET(self):
         parsed_path = urlparse(self.path)
@@ -424,7 +305,7 @@ class MyHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(transformed_content.encode())
         except Exception as e:
-            self.handle_error(e, "Internal server error")
+            self.handle_error(e)
 
     def handle_epg_request(self):
         log_message("Received request for EPG.")
@@ -483,7 +364,7 @@ class MyHandler(BaseHTTPRequestHandler):
             master_box = get_master_kodi_box()
             if not master_box:
                 raise Exception("Master Kodi box not found!")
-            proxy_url = f"http://{master_box['IP']}:{master_box['Proxy_Port']}/proxy?link={quote(link)}"
+            proxy_url = f"http://{master_box.ip}:{master_box.proxy_port}/proxy?link={quote(link)}"
 
             self.send_response(302)
             self.send_header('Location', proxy_url)
@@ -497,6 +378,22 @@ class KodiBox:
         self.proxy_port = proxy_port
         self.server_port = server_port
         self.status = "IDLE"
+        self.socket_server_thread = None
+
+    def start_socket_server(self):
+        if hasattr(self, 'socket_server_thread') and self.socket_server_thread.is_alive():
+            log_message("Socket server is already running.", level=xbmc.LOGWARNING)
+            return
+
+        self.socket_server_thread = threading.Thread(target=start_socket_server, args=(self.proxy_port, self.ip, self.server_port))
+        self.socket_server_thread.start()
+
+    def stop_socket_server(self):
+        global shutdown_socket_server_event
+        shutdown_socket_server_event.set()
+
+        if self.socket_server_thread and self.socket_server_thread.is_alive():
+            self.socket_server_thread.join()
 
     def start_playback(self, link):
         # Start playback on the Kodi box
@@ -534,9 +431,11 @@ class KodiBox:
 
     def mark_idle(self):
         self.status = "IDLE"
+        self.start_socket_server()
 
     def mark_playing(self):
         self.status = "PLAYING"
+        self.stop_socket_server()
 
 class MyMonitor(xbmc.Monitor):
     def __init__(self, main_httpd, proxy_servers):
@@ -571,48 +470,46 @@ def run():
         main_httpd = HTTPServer(server_address, MyHandler)
         main_httpd.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-        # Create a dictionary to hold proxy servers for each KODI_BOX
-        proxy_servers = {}
-
-        for box in KODI_BOXES:
-            proxy_port = box['Proxy_Port']
-            log_message(f"Starting proxy server for {box['Actor']} on port {proxy_port}...")
-            proxy_address = ('', proxy_port)
-            proxy_httpd = ThreadingHTTPServer(proxy_address, ProxyHandler)
-            proxy_httpd.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            proxy_servers[proxy_port] = proxy_httpd
-
-        monitor = MyMonitor(main_httpd, proxy_servers)
+        monitor = MyMonitor(main_httpd)
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             cleanup_future = executor.submit(cleanup_stale_entries)
             main_future = executor.submit(main_httpd.serve_forever)
-            # Submit each proxy server to the executor
-            proxy_futures = []
-            for port, proxy_server in proxy_servers.items():
-                future = executor.submit(proxy_server.serve_forever)
-                proxy_futures.append(future)
             
-            log_message("Both main server and proxy servers are now running.")
+            log_message("Main server is now running.")
 
             # Monitor for Kodi shutdown or addon disable
-            while not monitor.abortRequested():
-                if monitor.waitForAbort(1):  # Check every 1 second if Kodi is shutting down
-                    log_message("Kodi abort requested. Cleaning up...")
-                    break
+            while not monitor.abortRequested() and not shutting_down:
+            if monitor.waitForAbort(1) or shutting_down:
+                log_message("Kodi abort requested or shutdown signal received. Cleaning up...")
+                break
 
             # Wait for all tasks to complete
             cleanup_future.result()
             main_future.result()
-            for future in proxy_futures:
-                future.result()
 
     except Exception as e:
         log_message(f"Main execution error: {e}", level=xbmc.LOGERROR)
 
     finally:
-        # Release all ports before exiting
+        # Enhance the shutdown sequence here
+        log_message("Initiating graceful shutdown sequence...")
+
+        # 1. Signal all running threads to stop
+        global shutdown_socket_server_event
+        shutdown_socket_server_event.set()
+        
+        # 2. Wait for threads to finish
+        if cleanup_future:
+            cleanup_future.cancel()
+        if main_future:
+            main_future.cancel()
+
+        # 3. Release resources
+        # This includes closing any open files, network connections, etc.
         release_ports([box['Proxy_Port'] for box in KODI_BOXES] + [master_box['Server_Port']])
+        
+        log_message("Graceful shutdown completed.")
 
 
 if __name__ == '__main__':
