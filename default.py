@@ -52,8 +52,8 @@ def send_jsonrpc(kodi_url, payload):
         try:
             request_url = f"{kodi_url}/jsonrpc"
             request_data = json.dumps(payload).encode('utf-8')
-            request = urllib.request.Request(request_url, data=request_data, headers={'Content-Type': 'application/json'})
-            response = urllib.request.urlopen(request)
+            request = Request(request_url, data=request_data, headers={'Content-Type': 'application/json'})
+            response = urlopen(request)
             response_json = response.read().decode('utf-8')
             return json.loads(response_json)
         except Exception as e:
@@ -163,8 +163,8 @@ def get_encoder_url_for_link(link, headers={}):
                 if box["IP"] == kodi_ip:
                     log_message(f"Found encoder url {box['Encoder_URL']}", level=xbmc.LOGERROR)
                     encoder_url = box["Encoder_URL"]
-                    req = urllib.request.Request(encoder_url, headers=headers)
-                    return urllib.request.urlopen(req)
+                    req = Request(encoder_url, headers=headers)
+                    return urlopen(req)
     log_message(f"Could not find Encoder_URL for link {link}", level=xbmc.LOGERROR)
     return None  # or some default encoder URL if you have one
 
