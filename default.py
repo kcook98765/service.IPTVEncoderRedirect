@@ -480,9 +480,9 @@ def run():
 
             # Monitor for Kodi shutdown or addon disable
             while not monitor.abortRequested() and not shutting_down:
-            if monitor.waitForAbort(1) or shutting_down:
-                log_message("Kodi abort requested or shutdown signal received. Cleaning up...")
-                break
+                if monitor.waitForAbort(1) or shutting_down:
+                    log_message("Kodi abort requested or shutdown signal received. Cleaning up...")
+                    break
 
             # Wait for all tasks to complete
             cleanup_future.result()
