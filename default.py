@@ -207,7 +207,7 @@ def initialize_kodi_boxes():
 
     for box in kodi_boxes:
         if box.status == "IDLE":
-            box.start_socket_server()
+            start_socket_server(box.proxy_port, box.ip, box.server_port)
 
     return kodi_boxes
 
@@ -387,12 +387,12 @@ class MyHandler(BaseHTTPRequestHandler):
         lines = content.split('\n')
         new_lines = []
         master_kodi_box = get_master_kodi_box()
-        if not master_box:
+        if not master_kodi_box:
             raise Exception("Master Kodi box not found!")
         for line in lines:
             if line.startswith('plugin://'):
                 encoded_line = quote(line, safe='')
-                new_url = f"http://{master_box.ip}:{master_box.server_port}/play?link={encoded_line}"
+                new_url = f"http://{master_kodi_box.ip}:{master_kodi_box.server_port}/play?link={encoded_line}"
                 new_lines.append(new_url)
             else:
                 new_lines.append(line)
@@ -421,9 +421,9 @@ class MyHandler(BaseHTTPRequestHandler):
             with last_accessed_links_lock:
                 last_accessed_links[link] = datetime.datetime.now()
             master_kodi_box = get_master_kodi_box()
-            if not master_box:
+            if not master_kodi_box:
                 raise Exception("Master Kodi box not found!")
-            proxy_url = f"http://{master_box.ip}:{master_box.proxy_port}/proxy?link={quote(link)}"
+            proxy_url = f"http://{master_kodi_box.ip}:{master_kodi_box.proxy_port}/proxy?link={quote(link)}"
 
             self.send_response(302)
             self.send_header('Location', proxy_url)
@@ -452,13 +452,13 @@ def run():
         
         # Main server (synchronous)
         master_kodi_box = get_master_kodi_box()
-        if not master_box:
+        if not master_kodi_box:
             xbmcgui.Dialog().ok("Error", "Master Kodi settings not found or set correctly. Addon will be disabled.")
             xbmcaddon.Addon().setSetting("enabled", "false")  # Disable the addon
             return
         
-        log_message(f"Starting main server on IP {master_box.ip} , port {master_box.server_port}...")
-        server_address = (master_box.ip, master_box.server_port)
+        log_message(f"Starting main server on IP {master_kodi_box.ip} , port {master_kodi_box.server_port}...")
+        server_address = (master_kodi_box.ip, master_kodi_box.server_port)
         main_httpd = HTTPServer(server_address, MyHandler)
         main_httpd.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
@@ -494,7 +494,7 @@ def run():
         if main_future:
             main_future.cancel()
 
-        release_ports([box.proxy_port for box in KODI_BOXES] + [master_box.server_port])
+        release_ports([box.proxy_port for box in KODI_BOXES] + [master_kodi_box.server_port])
         log_message("Graceful shutdown completed.")
 
 
