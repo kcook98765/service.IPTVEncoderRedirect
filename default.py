@@ -1,5 +1,6 @@
 import xbmc, xbmcaddon, xbmcvfs, xbmcgui
 import os, json, time, threading, datetime, socket
+import traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import urlopen, Request
@@ -307,6 +308,11 @@ class ProxyHandler(FinishMixin, BaseHTTPRequestHandler):
             if not self.encoder_connection:
                 log_message("Encoder connection not established.")
                 return
+            else:
+                log_message(f"Encoder response code: {self.encoder_connection.status}")
+                log_message(f"Encoder response reason: {self.encoder_connection.reason}")
+                log_message(f"Encoder response headers: {self.encoder_connection.getheaders()}")
+
                 
             log_message(f"Connection established to encoder for link: {link}")
             log_message(f"Encoder headers: {self.encoder_connection.getheaders()}")
@@ -327,6 +333,7 @@ class ProxyHandler(FinishMixin, BaseHTTPRequestHandler):
             log_message(f"URL Error during proxying for link {link}: {ue.reason}", level=xbmc.LOGERROR)
         except Exception as e:
             log_message(f"Proxy error for link {link}: {type(e).__name__} - {e}", level=xbmc.LOGERROR)
+            log_message(traceback.format_exc(), level=xbmc.LOGERROR)
 
 
         finally:
