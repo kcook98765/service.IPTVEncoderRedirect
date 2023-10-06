@@ -24,7 +24,7 @@ assigned_ports = []
 
 def log_message(message, level=xbmc.LOGDEBUG):
     if ENABLE_LOGGING or level == xbmc.LOGERROR:
-        xbmc.log(message, level=level)
+        xbmc.log(message, level=xbmc.LOGERROR)
 
 def release_ports(ports_to_release):
     for port in ports_to_release:
@@ -362,10 +362,12 @@ class MyHandler(BaseHTTPRequestHandler):
         log_message("Received request for EPG.")
         try:
             content = self.fetch_content('http://localhost:52104/epg.xml')
+            content_bytes = content.encode('utf-8')  # Encode the content as bytes
+    
             self.send_response(200)
             self.send_header('Content-type', 'application/xml')
             self.end_headers()
-            self.wfile.write(content)
+            self.wfile.write(content_bytes)  # Write the encoded content as bytes
         except URLError as e:
             self.handle_error(e)
 
@@ -382,7 +384,7 @@ class MyHandler(BaseHTTPRequestHandler):
         for line in lines:
             if line.startswith('plugin://'):
                 encoded_line = quote(line, safe='')
-                new_url = f"http://{master_box['IP']}:{master_box['Server_Port']}/proxy?link={encoded_line}"
+                new_url = f"http://{master_box['IP']}:{master_box['Server_Port']}/play?link={encoded_line}"
                 new_lines.append(new_url)
             else:
                 new_lines.append(line)
