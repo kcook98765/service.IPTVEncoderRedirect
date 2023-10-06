@@ -297,7 +297,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     if kodi_box_to_stop:
                         stop_kodi_playback(kodi_box_to_stop)
     
-    super().finish()
+    super(ProxyHandler, self).finish()
 
     def do_GET(self):
         global active_proxies, active_links
