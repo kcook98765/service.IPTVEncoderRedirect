@@ -154,7 +154,7 @@ def get_master_kodi_box():
             return box
     return None  # Return None if no Master box is found
 
-def get_encoder_url_for_link(link):
+def get_encoder_url_for_link(link, headers={}):
     log_message(f"Lookup encoder url for link {link}", level=xbmc.LOGERROR)
     with active_links_lock:
         kodi_ip = active_links.get(link)
@@ -162,7 +162,9 @@ def get_encoder_url_for_link(link):
             for box in KODI_BOXES:
                 if box["IP"] == kodi_ip:
                     log_message(f"Found encoder url {box['Encoder_URL']}", level=xbmc.LOGERROR)
-                    return box["Encoder_URL"]
+                    encoder_url = box["Encoder_URL"]
+                    req = urllib.request.Request(encoder_url, headers=headers)
+                    return urllib.request.urlopen(req)
     log_message(f"Could not find Encoder_URL for link {link}", level=xbmc.LOGERROR)
     return None  # or some default encoder URL if you have one
 
@@ -295,14 +297,13 @@ class ProxyHandler(FinishMixin, BaseHTTPRequestHandler):
             last_accessed_links[link] = datetime.datetime.now()
 
         try:
-            # Get encoder URL based on link (or however you want to fetch it)
-            encoder_url = get_encoder_url_for_link(link)
-            log_message(f"Encoder URL fetched for link: {link} is {encoder_url}")
-
-            # Open a connection to the encoder
-            self.encoder_connection = urlopen(encoder_url)
-            log_message(f"Connection established to encoder: {encoder_url}")
-
+            # Get the client headers and pass them to the encoder
+            client_headers = {key: value for key, value in self.headers.items()}
+    
+            # Using the modified function to get the encoder connection directly
+            self.encoder_connection = get_encoder_url_for_link(link, headers=client_headers)
+            log_message(f"Connection established to encoder for link: {link}")
+    
             # Copy headers from the encoder to the client
             self.copy_headers_from_encoder()
 
@@ -334,10 +335,11 @@ class ProxyHandler(FinishMixin, BaseHTTPRequestHandler):
             with active_proxies_lock:  # Assuming you've created this lock at the top
                 if link not in active_proxies:
                     # Initialize this link's proxy info
-                    encoder_url = get_encoder_url_for_link(link)
-                    log_message(f"Initialize this link's proxy encoder url {encoder_url}")
+                    client_headers = {key: value for key, value in self.headers.items()}
+                    encoder_connection = get_encoder_url_for_link(link, headers=client_headers)
+                    log_message(f"Initialize this link's proxy encoder connection {encoder_connection}")
                     active_proxies[link] = {
-                        'encoder_connection': urlopen(encoder_url),
+                        'encoder_connection': encoder_connection,
                         'clients': set()
                     }
 
