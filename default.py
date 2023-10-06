@@ -191,7 +191,7 @@ def initialize_kodi_boxes():
                 kodi_boxes.append(slave_kodi_box)
 
     for box in kodi_boxes:
-        if box["Status"] == "IDLE":
+        if box.status == "IDLE":
             box.start_socket_server()
 
     return kodi_boxes
@@ -497,7 +497,7 @@ def run():
         if main_future:
             main_future.cancel()
 
-        release_ports([box['Proxy_Port'] for box in KODI_BOXES] + [master_box['Server_Port']])
+        release_ports([box.proxy_port for box in KODI_BOXES] + [master_box['Server_Port']])
         log_message("Graceful shutdown completed.")
 
 
