@@ -2,7 +2,7 @@ import xbmc, xbmcaddon, xbmcvfs, xbmcgui
 import os, json, time, threading, datetime, socket
 import traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, parse_qs, quote
+from urllib.parse import urlparse, parse_qs, quote, unquote
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 from concurrent.futures import ThreadPoolExecutor
@@ -55,7 +55,8 @@ def send_jsonrpc(kodi_url, payload=None):
         try:
             request_url = f"{kodi_url}/jsonrpc"
             request_data = json.dumps(payload).encode('utf-8')
-            log_message(f"Sending HTTP request to {request_url} with headers: {headers} and data: {request_data}", level=xbmc.LOGDEBUG)
+            request_headers = {'Content-Type': 'application/json'}
+            log_message(f"Sending HTTP request to {request_url} with headers: {request_headers} and data: {request_data}", level=xbmc.LOGDEBUG)
             request = Request(request_url, data=request_data, headers={'Content-Type': 'application/json'})
             response = urlopen(request)
             response_json = response.read().decode('utf-8')
@@ -137,7 +138,8 @@ class KodiBox:
     def start_playback(self, link):
         log_message(f"Starting playback of link {link} on Kodi box with IP {self.ip}", level=xbmc.LOGERROR)
         # Start playback on the Kodi box
-        self._send_jsonrpc_command("Player.Open", {"item": {"file": link}})
+        decoded_link = unquote(link)
+        self._send_jsonrpc_command("Player.Open", {"item": {"file": decoded_link}})
 
     def stop_playback(self):
         log_message(f"Stopping playback on Kodi box with IP {self.ip}", level=xbmc.LOGERROR)
