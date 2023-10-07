@@ -266,7 +266,7 @@ def cleanup_stale_entries():
         stale_links = set()
         current_time = datetime.datetime.now()
 
-        with last_accessed_links_lock:
+        with active_links_lock:
             for link, last_access_time in last_accessed_links.items():
                 if (current_time - last_access_time).total_seconds() > MAX_LINK_IDLE_TIME_SECONDS:
                     stale_links.add(link)
@@ -404,7 +404,7 @@ class MyHandler(BaseHTTPRequestHandler):
                 else:
                     self.send_error(503, "All Kodi boxes are in use.")
                     return
-            with last_accessed_links_lock:
+            with active_links_lock:
                 last_accessed_links[link] = datetime.datetime.now()
             master_kodi_box = get_master_kodi_box()
             if not master_kodi_box:
