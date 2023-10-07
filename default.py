@@ -98,7 +98,8 @@ def start_socket_server(proxy_port, target_host, target_port):
 
     def socket_server_loop():
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind(("", proxy_port))
+        server_socket.bind(("0.0.0.0", proxy_port))
+        log_message(f"Server socket bound to Port: {proxy_port}", level=xbmc.LOGDEBUG)
         ACTIVE_SOCKETS[proxy_port] = server_socket
         server_socket.listen(5)
         log_message(f"Append {proxy_port} to PROXY_SERVERS", level=xbmc.LOGDEBUG)
@@ -203,6 +204,7 @@ def initialize_kodi_boxes():
                 kodi_boxes.append(slave_kodi_box)
 
     for box in kodi_boxes:
+        log_message(f"Initialized Kodi box with IP: {box.ip}, Proxy Port: {box.proxy_port}, Server port: {box.server_port}", level=xbmc.LOGDEBUG)
         if box.status == "IDLE":
             start_socket_server(box.proxy_port, box.ip, box.server_port)
 
@@ -287,7 +289,7 @@ def stop_kodi_playback(kodi_box):
     kodi_box.mark_idle()
 
 def cleanup_stale_entries():
-    log_message("Cleanup process initiated...", level=xbmc.LOGERROR)
+    log_message("Cleanup stale entries process initiated...", level=xbmc.LOGERROR)
     global active_proxies, active_links, last_accessed_links
     
     while True:
@@ -302,6 +304,7 @@ def cleanup_stale_entries():
         with active_links_lock:
             for link, last_access_time in last_accessed_links.items():
                 if (current_time - last_access_time).total_seconds() > MAX_LINK_IDLE_TIME_SECONDS:
+                    log_message(f"Found link to cleanup {link}", level=xbmc.LOGERROR)
                     stale_links.add(link)
 
             # Remove the stale links from our tracking
@@ -312,6 +315,7 @@ def cleanup_stale_entries():
         # Now, clean up resources associated with stale links
         with active_proxies_lock:
             for link in stale_links:
+                log_message(f"Scan for active proxy link cleanup {link}", level=xbmc.LOGERROR)
                 if link in active_proxies:
                     log_message(f"Closing stale proxy for link: {link}", level=xbmc.LOGERROR)
                     active_proxies[link]['encoder_connection'].close()
@@ -320,14 +324,18 @@ def cleanup_stale_entries():
 
         with active_links_lock:
             for link in stale_links:
+                log_message(f"Scan for active link cleanup {link}", level=xbmc.LOGERROR)
                 if link in active_links:
                     log_message(f"Closing stale active links {active_links[link]}", level=xbmc.LOGERROR)
                     active_links.pop(link, None)
 
 def is_kodi_box_playing(kodi_box, link):
     with active_links_lock:
+        log_message(f"Check if kodi box {kodi_box} is playing {link}", level=xbmc.LOGERROR)
         if link in active_links and active_links[link] == kodi_box.ip:
+            log_message(f"Found link {link} playing on {kodi_box.ip}", level=xbmc.LOGERROR)
             return True
+    log_message("Not finding any kodi box playing link {link}", level=xbmc.LOGERROR)
     return False
 
 
