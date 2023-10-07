@@ -18,6 +18,7 @@ ACTIVE_SOCKETS = {}
 last_accessed_links = {}
 active_links_lock = threading.Lock()
 assigned_ports = []
+cleanup_shutdown_event = threading.Event()
 
 def log_message(message, level=xbmc.LOGDEBUG):
     if ENABLE_LOGGING or level == xbmc.LOGERROR:
@@ -292,7 +293,7 @@ def cleanup_stale_entries():
     log_message("Cleanup stale entries process initiated...", level=xbmc.LOGERROR)
     global active_proxies, active_links, last_accessed_links
     
-    while True:
+    while not cleanup_shutdown_event.is_set():
         time.sleep(CLEANUP_INTERVAL_SECONDS)
         
         log_message(f"Running cleanup process.....", level=xbmc.LOGERROR)
@@ -543,6 +544,7 @@ def run():
     finally:
         try:
             log_message("Initiating graceful shutdown sequence...")
+            cleanup_shutdown_event.set()
     
             global shutdown_socket_server_event
             log_message("Setting shutdown event for socket servers...")
