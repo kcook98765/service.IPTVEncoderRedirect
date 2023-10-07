@@ -234,16 +234,26 @@ def get_available_kodi_box(link):
 
     # Check if link is already playing on a Kodi box
     if link in active_links:
+        log_message(f"link : {link} found in active_links")
         for box in KODI_BOXES:
+            log_message(f"Checking Kodi box with ip {box.ip}")
             if box.ip == active_links[link]:
                 log_message(f"Link already playing on Kodi box with ip {box.ip}", level=xbmc.LOGERROR)
                 return box
+            else:
+                log_message(f"No match found for box with ip {box.ip}")
+    else:
+        log_message(f"link : {link} NOT found in active_links")
 
+    log_message("Check for IDLE boxes")
     # Find an available IDLE Kodi box
     for box in KODI_BOXES:
+        log_message(f"Checking Kodi box with ip {box.ip}")
         if box.status == "IDLE":
+            log_message(f"Kodi box with ip {box.ip} is IDLE")
             box.mark_playing()  # Mark the box as PLAYING
-            if link:
+            if link is not None and link != "":
+                log_message(f"Assign active_links with link {link} to kodi IP {box.ip}")
                 active_links[link] = box.ip
             log_message(f"Found available kodi box with ip {box.ip}", level=xbmc.LOGERROR)
             return box
