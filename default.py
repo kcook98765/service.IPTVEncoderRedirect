@@ -300,12 +300,29 @@ def cleanup_stale_entries():
                     log_message(f"Closing stale active links {active_links[link]}", level=xbmc.LOGERROR)
                     active_links.pop(link, None)
 
+def is_kodi_box_playing(kodi_box, link):
+    with active_links_lock:
+        if link in active_links and active_links[link] == kodi_box.ip:
+            return True
+    return False
+
+
 def handle_client(client_socket, target_host, target_port):
     try:
         with client_socket:
             request_data = client_socket.recv(1024)
             if not request_data:
                 return
+                
+            # Check if the link is being played on the selected Kodi box. If not, start playback.
+            link = request_data.decode().split(" ")[1].split("?link=")[-1]  # Extract the link from the request data (this assumes a standard GET request format).
+            for box in KODI_BOXES:
+                if box.ip == target_host:  # Check if this is the Kodi box for the target_host
+                    if not is_kodi_box_playing(box, link):
+                        box.start_playback(link)
+                        with active_links_lock:
+                            active_links[link] = box.ip
+                    break
 
             with socket.create_connection((target_host, target_port)) as server_socket:
                 server_socket.send(request_data)
@@ -418,7 +435,9 @@ class MyHandler(BaseHTTPRequestHandler):
             master_kodi_box = get_master_kodi_box()
             if not master_kodi_box:
                 raise Exception("Master Kodi box not found!")
-            proxy_url = f"http://{master_kodi_box.ip}:{master_kodi_box.proxy_port}/proxy?link={quote(link)}"
+            proxy_url = f"http://{master_kodi_box.ip}:{master_kodi_box.proxy_port}/?link={quote(link)}"
+            
+            log_message(f"Sending client to proxy URL: {proxy_url}", level=xbmc.LOGERROR)
 
             self.send_response(302)
             self.send_header('Location', proxy_url)
