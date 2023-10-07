@@ -90,9 +90,10 @@ shutdown_socket_server_event = threading.Event()
 
 
 def start_socket_server(proxy_port, target_host, target_port):
-    log_message(f"Attempting to start socket server on port {proxy_port}...", level=xbmc.LOGERROR)
+    log_message(f"Attempting to start socket server on port {proxy_port}, target_host {target_host}, target_port {target_port}...", level=xbmc.LOGERROR)
     global PROXY_SERVERS
     if shutdown_socket_server_event.is_set():
+        log_message("shutdown_socket_server_event.is_set is true", level=xbmc.LOGERROR)
         return
 
     def socket_server_loop():
@@ -100,7 +101,8 @@ def start_socket_server(proxy_port, target_host, target_port):
         server_socket.bind(("", proxy_port))
         ACTIVE_SOCKETS[proxy_port] = server_socket
         server_socket.listen(5)
-        PROXY_SERVERS.append(server_socket)
+        log_message(f"Append {proxy_port} to PROXY_SERVERS", level=xbmc.LOGDEBUG)
+        PROXY_SERVERS.append(proxy_port)
         log_message(f"Raw socket server initialized and listening on port {proxy_port}", level=xbmc.LOGDEBUG)
 
         while not shutdown_socket_server_event.is_set():
