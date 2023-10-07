@@ -15,7 +15,6 @@ MAX_LINK_IDLE_TIME_SECONDS = 3600 * 1  # Remove links that have been idle for 1 
 # Add an additional dictionary to track the last access time of each link.
 last_accessed_links = {}
 active_links_lock = threading.Lock()
-shutting_down = False
 assigned_ports = []
 
 def log_message(message, level=xbmc.LOGDEBUG):
@@ -34,7 +33,10 @@ def release_ports(ports_to_release):
         except (socket.error, OSError):
             pass
 
-def send_jsonrpc(kodi_url, payload):
+def send_jsonrpc(kodi_url, payload=None):
+    if payload is None:
+        payload = {}
+
     if kodi_url == "local":
         log_message("Send JSONRPC to local kodi", level=xbmc.LOGERROR)
         try:
@@ -248,7 +250,7 @@ def stop_kodi_playback(kodi_box):
     with active_links_lock:
         for link, box_ip in active_links.items():
             if box_ip == kodi_box.ip:
-                del active_links[link]
+                active_links.pop(link, None)
                 break
     kodi_box.mark_idle()
 
@@ -272,7 +274,7 @@ def cleanup_stale_entries():
             # Remove the stale links from our tracking
             for link in stale_links:
                 log_message(f"Dropping stale link {link}", level=xbmc.LOGERROR)
-                del last_accessed_links[link]
+                last_accessed_links.pop(link, None)
 
         # Now, clean up resources associated with stale links
         with active_proxies_lock:
@@ -280,13 +282,13 @@ def cleanup_stale_entries():
                 if link in active_proxies:
                     active_proxies[link]['encoder_connection'].close()
                     log_message(f"Closing stale proxy {active_proxies[link]['encoder_connection']}", level=xbmc.LOGERROR)
-                    del active_proxies[link]
+                    active_proxies.pop(link, None)
 
         with active_links_lock:
             for link in stale_links:
                 if link in active_links:
                     log_message(f"Closing stale active links {active_links[link]}", level=xbmc.LOGERROR)
-                    del active_links[link]
+                    active_links.pop(link, None)
 
 def handle_client(client_socket, target_host, target_port):
     try:
@@ -361,7 +363,7 @@ class MyHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(content_bytes)  # Write the encoded content as bytes
         except URLError as e:
-            self.handle_error(e)
+            self.handle_error(f"Unexpected error: {e}")
 
     def fetch_content(self, url):
         response = urlopen(url)
@@ -431,6 +433,8 @@ class MyMonitor(xbmc.Monitor):
 MAX_WORKERS = 10  # Adjust this based on the maximum number of simultaneous threads you expect
 
 def run():
+    cleanup_future = None
+    main_future = None
     try:
         log_message("Starting server...")
         
@@ -455,8 +459,8 @@ def run():
             log_message("Main server is now running.")
 
             # Monitor for Kodi shutdown or addon disable
-            while not monitor.abortRequested() and not shutting_down:
-                if monitor.waitForAbort(1) or shutting_down:
+            while not monitor.abortRequested(:
+                if monitor.waitForAbort(1):
                     log_message("Kodi abort requested or shutdown signal received. Cleaning up...")
                     break
 
