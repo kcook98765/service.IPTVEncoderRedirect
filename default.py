@@ -43,10 +43,10 @@ def send_jsonrpc(kodi_url, payload=None):
         try:
             command = json.dumps(payload)
             response_json = xbmc.executeJSONRPC(command)
+            log_message(f"Received JSON-RPC response: {response_json}", level=xbmc.LOGDEBUG)
             return json.loads(response_json)
         except Exception as e:
-            error_message = f"Error sending JSONRPC to local Kodi: {str(e)}"
-            log_message(error_message, level=xbmc.LOGERROR)
+            log_message(f"Error sending JSON-RPC to local Kodi: {str(e)}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
             # You can log additional error information or handle the error as needed.
             return None
     else:
@@ -54,13 +54,13 @@ def send_jsonrpc(kodi_url, payload=None):
         try:
             request_url = f"{kodi_url}/jsonrpc"
             request_data = json.dumps(payload).encode('utf-8')
+            log_message(f"Sending HTTP request to {request_url} with headers: {headers} and data: {request_data}", level=xbmc.LOGDEBUG)
             request = Request(request_url, data=request_data, headers={'Content-Type': 'application/json'})
             response = urlopen(request)
             response_json = response.read().decode('utf-8')
             return json.loads(response_json)
         except Exception as e:
-            error_message = f"Error sending JSONRPC to remote Kodi ({kodi_url}): {str(e)}"
-            log_message(error_message, level=xbmc.LOGERROR)
+            log_message(f"Error sending JSON-RPC to remote Kodi '{kodi_url}' : {str(e)}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
             # You can log additional error information or handle the error as needed.
             return None
 
@@ -118,6 +118,7 @@ class KodiBox:
         self.socket_server_thread = None
 
     def _send_jsonrpc_command(self, method, params):
+        log_message(f"Sending JSON-RPC command '{method}' with payload: {json.dumps(params)} to {self.ip}", level=xbmc.LOGDEBUG)
         log_message(f"{method} on Kodi box {self.actor} with IP: {self.ip}", level=xbmc.LOGDEBUG)
         payload = {
             "jsonrpc": "2.0",
@@ -126,6 +127,7 @@ class KodiBox:
             "id": 1
         }
         kodi_url = "local" if self.actor == "Master" else f"http://{self.ip}:8080"
+        log_message(f"Interacting with Kodi box '{self.actor}' at {kodi_url}", level=xbmc.LOGDEBUG)
         response_json = send_jsonrpc(kodi_url, payload)
         if response_json and 'error' in response_json:
             log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
