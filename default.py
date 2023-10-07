@@ -459,7 +459,7 @@ def run():
             log_message("Main server is now running.")
 
             # Monitor for Kodi shutdown or addon disable
-            while not monitor.abortRequested(:
+            while not monitor.abortRequested():
                 if monitor.waitForAbort(1):
                     log_message("Kodi abort requested or shutdown signal received. Cleaning up...")
                     break
