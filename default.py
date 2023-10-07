@@ -545,27 +545,32 @@ def run():
 
     finally:
         try:
-            log_message("Initiating graceful shutdown sequence...")
+            log_message("Starting graceful shutdown...", level=xbmc.LOGERROR)
+            
+            log_message("Initiating shutdown sequence: Setting cleanup events...", level=xbmc.LOGERROR)
             cleanup_shutdown_event.set()
-    
+
+            log_message("Setting shutdown event for socket servers...", level=xbmc.LOGERROR)
             global shutdown_socket_server_event
-            log_message("Setting shutdown event for socket servers...")
+
             shutdown_socket_server_event.set()
             log_message("Shutdown event for socket servers set.")
 
-    
+            log_message("Handling cleanup future...", level=xbmc.LOGERROR)
             # Handle cleanup future
             if cleanup_future:
                 log_message("Attempting to cancel cleanup_future...")
                 cleanup_future.cancel()
                 log_message("cleanup_future cancelled.")
-    
+
+            log_message("Handling main future...", level=xbmc.LOGERROR)
             # Handle main future
             if main_future:
                 log_message("Attempting to cancel main_future...")
                 main_future.cancel()
                 log_message("main_future cancelled.")
 
+            log_message("Handling executor...", level=xbmc.LOGERROR)
             if executor:
                 log_message("Shutting down executor...")
                 executor.shutdown(wait=False)
@@ -573,11 +578,15 @@ def run():
 
 
             log_message("Releasing ports...")
-            release_ports([box.proxy_port for box in KODI_BOXES] + [master_kodi_box.server_port])
+            release_ports([box.proxy_port for box in KODI_BOXES])
             log_message("Ports released successfully.")
             log_message("Graceful shutdown completed.")
+
+        except concurrent.futures.TimeoutError as te:
+            log_message(f"Timeout during graceful shutdown: {te}", level=xbmc.LOGERROR)
+            
         except Exception as e:
-            log_message(f"Error during graceful shutdown: {e}", level=xbmc.LOGERROR)
+            log_message(f"Unexpected error during graceful shutdown: {e}", level=xbmc.LOGERROR)
 
 
 if __name__ == '__main__':
