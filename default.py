@@ -1,6 +1,6 @@
 import xbmc, xbmcaddon, xbmcvfs, xbmcgui
 import os, json, time, threading, datetime, socket
-import traceback, signal
+import traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import urlopen, Request
@@ -22,10 +22,6 @@ def log_message(message, level=xbmc.LOGDEBUG):
     if ENABLE_LOGGING or level == xbmc.LOGERROR:
         xbmc.log(message, level=xbmc.LOGERROR)
 
-def signal_handler(signum, frame):
-    global shutting_down
-    shutting_down = True
-    log_message("Received shutdown signal. Initiating graceful shutdown...")
 
 def release_ports(ports_to_release):
     for port in ports_to_release:
@@ -119,47 +115,32 @@ class KodiBox:
         self.status = "IDLE"
         self.socket_server_thread = None
 
+    def _send_jsonrpc_command(self, method, params):
+        log_message(f"{method} on Kodi box {self.actor} with IP: {self.ip}", level=xbmc.LOGDEBUG)
+        payload = {
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+            "id": 1
+        }
+        kodi_url = "local" if self.actor == "Master" else f"http://{self.ip}:8080"
+        response_json = send_jsonrpc(kodi_url, payload)
+        if response_json and 'error' in response_json:
+            log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
+
+    def start_playback(self, link):
+        # Start playback on the Kodi box
+        self._send_jsonrpc_command("Player.Open", {"item": {"file": link}})
+
+    def stop_playback(self):
+        # Stop playback on the Kodi box
+        self._send_jsonrpc_command("Player.Stop", {"playerid": 1})
 
     def stop_socket_server(self):
         global shutdown_socket_server_event
         shutdown_socket_server_event.set()
-
         if self.socket_server_thread and self.socket_server_thread.is_alive():
             self.socket_server_thread.join()
-
-    def start_playback(self, link):
-        # Start playback on the Kodi box
-        log_message(f"Starting playback on Kodi box {self.actor} with IP: {self.ip} for {link}", level=xbmc.LOGDEBUG)
-        payload = {
-            "jsonrpc": "2.0",
-            "method": "Player.Open",
-            "params": {
-                "item": {
-                    "file": link
-                }
-            },
-            "id": 1
-        }
-        kodi_url = "local" if self.actor == "Master" else f"http://{self.ip}:8080"
-        response_json = send_jsonrpc(kodi_url, payload)
-        if response_json and 'error' in response_json:
-            log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
-
-    def stop_playback(self):
-        # Stop playback on the Kodi box
-        log_message(f"Stopping playback on Kodi box {self.actor} with IP: {self.ip}", level=xbmc.LOGDEBUG)
-        payload = {
-            "jsonrpc": "2.0",
-            "method": "Player.Stop",
-            "params": {
-                "playerid": 1
-            },
-            "id": 1
-        }
-        kodi_url = "local" if self.actor == "Master" else f"http://{self.ip}:8080"
-        response_json = send_jsonrpc(kodi_url, payload)
-        if response_json and 'error' in response_json:
-            log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
 
     def mark_idle(self):
         self.status = "IDLE"
@@ -169,6 +150,7 @@ class KodiBox:
     def mark_playing(self):
         self.status = "PLAYING"
         self.stop_socket_server()
+
 
 def initialize_kodi_boxes():
     start_port = 49152  # Start of dynamic/private port range
@@ -501,9 +483,6 @@ def run():
 
 
 if __name__ == '__main__':
-    # Register signal handlers
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
     log_message("Starting application...")
     run()
     log_message("Application terminated.")
