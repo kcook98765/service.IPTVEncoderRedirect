@@ -350,7 +350,11 @@ def handle_client(client_socket, target_host, target_port):
 
         # Connect to the encoder and stream its content back to the client
         with socket.create_connection((encoder_host, encoder_port)) as encoder_socket:
-            # Forward the client's request to the encoder
+            
+            # 1. Capture the request data from the client
+            request_data = client_socket.recv(4096)
+
+            # 2. Forward the captured request data to the encoder
             encoder_socket.sendall(request_data)
             
             # Stream the encoder's response back to the client
@@ -362,6 +366,7 @@ def handle_client(client_socket, target_host, target_port):
 
     except Exception as e:
         log_message(f"Error while handling client: {str(e)}", level=xbmc.LOGERROR)
+
 
 
 
@@ -515,26 +520,50 @@ def run():
                     log_message("Shutdown signal received from Kodi.", level=xbmc.LOGERROR)
                     break
 
+            log_message(f"Active threads before shutdown: {threading.active_count()}", level=xbmc.LOGERROR)
+
             # Wait for all tasks to complete
-            cleanup_future.result()
-            main_future.result()
+            try:
+                cleanup_future.result(timeout=1)  # wait forv1 seconds
+                main_future.result(timeout=1)
+            except concurrent.futures.TimeoutError:
+                log_message("Future task took too long to complete.", level=xbmc.LOGERROR)
 
     except Exception as e:
         log_message(f"Main execution error: {e}", level=xbmc.LOGERROR)
 
     finally:
-        log_message("Initiating graceful shutdown sequence...")
+        try:
+            log_message("Initiating graceful shutdown sequence...")
+    
+            global shutdown_socket_server_event
+            log_message("Setting shutdown event for socket servers...")
+            shutdown_socket_server_event.set()
+            log_message("Shutdown event for socket servers set.")
 
-        global shutdown_socket_server_event
-        shutdown_socket_server_event.set()
+    
+            # Handle cleanup future
+            if cleanup_future:
+                log_message("Attempting to cancel cleanup_future...")
+                cleanup_future.cancel()
+                log_message("cleanup_future cancelled.")
+    
+            # Handle main future
+            if main_future:
+                log_message("Attempting to cancel main_future...")
+                main_future.cancel()
+                log_message("main_future cancelled.")
 
-        if cleanup_future:
-            cleanup_future.cancel()
-        if main_future:
-            main_future.cancel()
+            log_message("Shutting down executor...")
+            executor.shutdown(wait=False)
+            log_message("Executor shutdown completed.")
 
-        release_ports([box.proxy_port for box in KODI_BOXES] + [master_kodi_box.server_port])
-        log_message("Graceful shutdown completed.")
+            log_message("Releasing ports...")
+            release_ports([box.proxy_port for box in KODI_BOXES] + [master_kodi_box.server_port])
+            log_message("Ports released successfully.")
+            log_message("Graceful shutdown completed.")
+        except Exception as e:
+            log_message(f"Error during graceful shutdown: {e}", level=xbmc.LOGERROR)
 
 
 if __name__ == '__main__':
