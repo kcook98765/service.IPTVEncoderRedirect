@@ -2,7 +2,7 @@
 <addon
     id="service.IPTVEncoderRedirect"
     name="IPTV Encoder Proxy"
-    version="0.0.75"
+    version="0.0.76"
     provider-name="kcook98765">
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>

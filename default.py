@@ -12,6 +12,7 @@ ENABLE_LOGGING = True # FALSE to shut off
 CLEANUP_INTERVAL_SECONDS = 3600  # This will check for cleanup every hour. Adjust as needed.
 MAX_LINK_IDLE_TIME_SECONDS = 3600 * 1  # Remove links that have been idle for 1 hour.
 PROXY_SERVERS = []
+ACTIVE_SOCKETS = {}
 
 # Add an additional dictionary to track the last access time of each link.
 last_accessed_links = {}
@@ -26,14 +27,12 @@ def log_message(message, level=xbmc.LOGDEBUG):
 def release_ports(ports_to_release):
     for port in ports_to_release:
         log_message(f"Attempting to release port: {port}...", level=xbmc.LOGERROR)
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(1)
-                s.bind(("localhost", port))
-                s.close()
-        except (socket.error, OSError) as e:
-            log_message(f"Failed to release port {port}. Error: {str(e)}", level=xbmc.LOGERROR)
-            pass
+        if port in ACTIVE_SOCKETS:
+            ACTIVE_SOCKETS[port].close()  # Close the socket.
+            del ACTIVE_SOCKETS[port]      # Remove it from the dictionary.
+            log_message(f"Port {port} released.", level=xbmc.LOGDEBUG)
+        else:
+            log_message(f"Port {port} not found in active sockets.", level=xbmc.LOGDEBUG)
 
 def send_jsonrpc(kodi_url, payload=None):
     if payload is None:
@@ -99,13 +98,14 @@ def start_socket_server(proxy_port, target_host, target_port):
     def socket_server_loop():
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.bind(("", proxy_port))
+        ACTIVE_SOCKETS[proxy_port] = server_socket
         server_socket.listen(5)
         PROXY_SERVERS.append(server_socket)
-        log_message(f"Raw socket server listening on port {proxy_port}")
+        log_message(f"Raw socket server initialized and listening on port {proxy_port}", level=xbmc.LOGDEBUG)
 
         while not shutdown_socket_server_event.is_set():
             client_socket, addr = server_socket.accept()
-            log_message(f"Accepted connection from {addr[0]}:{addr[1]}")
+            log_message(f"Accepted proxy connection from {addr[0]}:{addr[1]}", level=xbmc.LOGDEBUG)
             threading.Thread(target=handle_client, args=(client_socket, target_host, target_port)).start()
 
     threading.Thread(target=socket_server_loop).start()
@@ -330,39 +330,36 @@ def is_kodi_box_playing(kodi_box, link):
 
 
 def handle_client(client_socket, target_host, target_port):
-    log_message(f"Handling client connection on {target_host}:{target_port}", level=xbmc.LOGERROR)
+    log_message(f"Begin handling client request on proxy port {target_port}", level=xbmc.LOGDEBUG)
     try:
-        with client_socket:
-            request_data = client_socket.recv(1024)
-            if not request_data:
-                return
-                
-            # Check if the link is being played on the selected Kodi box. If not, start playback.
-            link = request_data.decode().split(" ")[1].split("?link=")[-1]  # Extract the link from the request data (this assumes a standard GET request format).
-            for box in KODI_BOXES:
-                if box.ip == target_host:  # Check if this is the Kodi box for the target_host
-                    if not is_kodi_box_playing(box, link):
-                        box.start_playback(link)
-                        with active_links_lock:
-                            active_links[link] = box.ip
-                    break
+        # Determine the Kodi box this request pertains to based on the port
+        kodi_box = next((box for box in KODI_BOXES if box.proxy_port == target_port), None)
+        
+        if not kodi_box:
+            log_message(f"No Kodi box found for port {target_port}", level=xbmc.LOGERROR)
+            return
 
-            with socket.create_connection((target_host, target_port)) as server_socket:
-                server_socket.send(request_data)
-                while True:
-                    response_data = server_socket.recv(4096)
-                    if not response_data:
-                        break
-                    client_socket.send(response_data)
-    except BrokenPipeError:
-        log_message("Client closed the connection before the response could be sent.")
+        encoder_url = kodi_box.encoder_url
+        
+        # Parse the encoder URL to determine its host and port
+        parsed_encoder_url = urlparse(encoder_url)
+        encoder_host = parsed_encoder_url.hostname
+        encoder_port = parsed_encoder_url.port if parsed_encoder_url.port else 80  # Default to port 80 if not specified
+
+        # Connect to the encoder and stream its content back to the client
+        with socket.create_connection((encoder_host, encoder_port)) as encoder_socket:
+            # Forward the client's request to the encoder
+            encoder_socket.sendall(request_data)
+            
+            # Stream the encoder's response back to the client
+            while True:
+                response_data = encoder_socket.recv(4096)
+                if not response_data:
+                    break
+                client_socket.send(response_data)
+
     except Exception as e:
         log_message(f"Error while handling client: {str(e)}", level=xbmc.LOGERROR)
-
-
-
-
-
 
 
 
@@ -458,7 +455,8 @@ class MyHandler(BaseHTTPRequestHandler):
             master_kodi_box = get_master_kodi_box()
             if not master_kodi_box:
                 raise Exception("Master Kodi box not found!")
-            proxy_url = f"http://{master_kodi_box.ip}:{master_kodi_box.proxy_port}{encoder_url_path}"
+            encoder_path = urlparse(available_kodi_box.encoder_url).path
+            proxy_url = f"http://{master_kodi_box.ip}:{master_kodi_box.proxy_port}{encoder_path}"
             
             log_message(f"Sending client to proxy URL: {proxy_url}", level=xbmc.LOGERROR)
     
