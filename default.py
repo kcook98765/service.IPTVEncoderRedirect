@@ -11,6 +11,7 @@ ADDON = xbmcaddon.Addon()
 ENABLE_LOGGING = True # FALSE to shut off
 CLEANUP_INTERVAL_SECONDS = 3600  # This will check for cleanup every hour. Adjust as needed.
 MAX_LINK_IDLE_TIME_SECONDS = 3600 * 1  # Remove links that have been idle for 1 hour.
+PROXY_SERVERS = []
 
 # Add an additional dictionary to track the last access time of each link.
 last_accessed_links = {}
@@ -88,6 +89,7 @@ shutdown_socket_server_event = threading.Event()
 
 
 def start_socket_server(proxy_port, target_host, target_port):
+    global PROXY_SERVERS
     if shutdown_socket_server_event.is_set():
         return
 
@@ -95,15 +97,13 @@ def start_socket_server(proxy_port, target_host, target_port):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.bind(("", proxy_port))
         server_socket.listen(5)
-
+        PROXY_SERVERS.append(server_socket)
         log_message(f"Raw socket server listening on port {proxy_port}")
 
         while not shutdown_socket_server_event.is_set():
             client_socket, addr = server_socket.accept()
             log_message(f"Accepted connection from {addr[0]}:{addr[1]}")
             threading.Thread(target=handle_client, args=(client_socket, target_host, target_port)).start()
-
-        server_socket.close()
 
     threading.Thread(target=socket_server_loop).start()
 
@@ -416,18 +416,17 @@ class MyHandler(BaseHTTPRequestHandler):
             self.end_headers()                
 
 class MyMonitor(xbmc.Monitor):
-    def __init__(self, main_httpd, proxy_servers):
+    def __init__(self, main_httpd):
         self.main_httpd = main_httpd
-        self.proxy_servers = proxy_servers
 
     def onAbortRequested(self):
         log_message("Kodi is shutting down...")
         self.main_httpd.shutdown()
-        for _, proxy_server in self.proxy_servers.items():
-            proxy_server.shutdown()
-        main_httpd.server_close()
-        for _, proxy_server in self.proxy_servers.items():
-            proxy_server.server_close()
+        
+        for proxy_server in PROXY_SERVERS:
+            proxy_server.close()  # Shut down the proxy server
+        
+        self.main_httpd.server_close()
         log_message("Servers shut down.")
 
 MAX_WORKERS = 10  # Adjust this based on the maximum number of simultaneous threads you expect
