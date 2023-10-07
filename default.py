@@ -31,7 +31,7 @@ def release_ports(ports_to_release):
                 s.settimeout(1)
                 s.bind(("localhost", port))
                 s.close()
-        except (socket.error, OSError):
+        except (socket.error, OSError) as e:
             log_message(f"Failed to release port {port}. Error: {str(e)}", level=xbmc.LOGERROR)
             pass
 
