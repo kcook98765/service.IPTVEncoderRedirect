@@ -440,31 +440,31 @@ class MyHandler(BaseHTTPRequestHandler):
             available_kodi_box = get_available_kodi_box(link)
             if available_kodi_box:
                 log_message(f"Link already playing on a Kodi box, directing to {available_kodi_box.encoder_url}", level=xbmc.LOGERROR)
-                encoder_url = available_kodi_box.encoder_url
+                encoder_url_path = urlparse(available_kodi_box.encoder_url).path
             else:
                 available_kodi_box = get_available_kodi_box(None)
                 if available_kodi_box:
                     available_kodi_box.start_playback(link)
                     log_message(f"Started playback on a new box, redirecting to {available_kodi_box.encoder_url}", level=xbmc.LOGERROR)
-                    encoder_url = available_kodi_box.encoder_url
+                    encoder_url_path = urlparse(available_kodi_box.encoder_url).path
                     with active_links_lock:
                         active_links[link] = available_kodi_box.ip
                 else:
                     self.send_error(503, "All Kodi boxes are in use.")
                     return
-
+    
             with active_links_lock:
                 last_accessed_links[link] = datetime.datetime.now()
             master_kodi_box = get_master_kodi_box()
             if not master_kodi_box:
                 raise Exception("Master Kodi box not found!")
-            proxy_url = f"http://{master_kodi_box.ip}:{master_kodi_box.proxy_port}/?link={quote(link)}"
+            proxy_url = f"http://{master_kodi_box.ip}:{master_kodi_box.proxy_port}{encoder_url_path}"
             
             log_message(f"Sending client to proxy URL: {proxy_url}", level=xbmc.LOGERROR)
-
+    
             self.send_response(302)
             self.send_header('Location', proxy_url)
-            self.end_headers()                
+            self.end_headers()           
 
 class MyMonitor(xbmc.Monitor):
     def __init__(self, main_httpd):
