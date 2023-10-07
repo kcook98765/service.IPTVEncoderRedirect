@@ -93,19 +93,21 @@ def start_socket_server(proxy_port, target_host, target_port):
     if shutdown_socket_server_event.is_set():
         return
 
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind(("", proxy_port))
-    server_socket.listen(5)
+    def socket_server_loop():
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.bind(("", proxy_port))
+        server_socket.listen(5)
 
-    log_message(f"Raw socket server listening on port {proxy_port}")
+        log_message(f"Raw socket server listening on port {proxy_port}")
 
-    while not shutdown_socket_server_event.is_set():
-        client_socket, addr = server_socket.accept()
-        log_message(f"Accepted connection from {addr[0]}:{addr[1]}")
-        threading.Thread(target=handle_client, args=(client_socket, target_host, target_port)).start()
+        while not shutdown_socket_server_event.is_set():
+            client_socket, addr = server_socket.accept()
+            log_message(f"Accepted connection from {addr[0]}:{addr[1]}")
+            threading.Thread(target=handle_client, args=(client_socket, target_host, target_port)).start()
 
-    server_socket.close()
+        server_socket.close()
 
+    threading.Thread(target=socket_server_loop).start()
 
 class KodiBox:
     def __init__(self, actor, ip, encoder_url, proxy_port, server_port):
