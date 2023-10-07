@@ -448,11 +448,18 @@ class MyHandler(BaseHTTPRequestHandler):
         return '\n'.join(new_lines)
 
     def handle_play_request(self, link):
-        log_message("Received play request.")
+        log_message(f"Received play request for link {link}", level=xbmc.LOGERROR)
         with play_request_lock:
             available_kodi_box = get_available_kodi_box(link)
             if available_kodi_box:
-                if link in active_links and active_links[link] == available_kodi_box.ip:
+                # Check if the Kodi box is actually playing the content
+                active_players = available_kodi_box._send_jsonrpc_command("Player.GetActivePlayers", {})
+                
+                if not active_players:
+                    log_message(f"No active players found on Kodi box {available_kodi_box.ip}. Sending play request.", level=xbmc.LOGERROR)
+                    available_kodi_box.start_playback(link)
+                    
+                elif link in active_links and active_links[link] == available_kodi_box.ip:
                     # The link is already being played on the available Kodi box
                     log_message(f"Link already playing on a Kodi box, directing to {available_kodi_box.encoder_url}", level=xbmc.LOGERROR)
                 else:
