@@ -20,18 +20,19 @@ assigned_ports = []
 
 def log_message(message, level=xbmc.LOGDEBUG):
     if ENABLE_LOGGING or level == xbmc.LOGERROR:
-        xbmc.log(message, level=xbmc.LOGERROR)
+        xbmc.log(f"IPTV_Encoder_Proxy: {message}", level=xbmc.LOGERROR)
 
 
 def release_ports(ports_to_release):
     for port in ports_to_release:
-        log_message(f"Release port: {port}", level=xbmc.LOGERROR)
+        log_message(f"Attempting to release port: {port}...", level=xbmc.LOGERROR)
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(1)
                 s.bind(("localhost", port))
                 s.close()
         except (socket.error, OSError):
+            log_message(f"Failed to release port {port}. Error: {str(e)}", level=xbmc.LOGERROR)
             pass
 
 def send_jsonrpc(kodi_url, payload=None):
@@ -89,6 +90,7 @@ shutdown_socket_server_event = threading.Event()
 
 
 def start_socket_server(proxy_port, target_host, target_port):
+    log_message(f"Attempting to start socket server on port {proxy_port}...", level=xbmc.LOGERROR)
     global PROXY_SERVERS
     if shutdown_socket_server_event.is_set():
         return
@@ -133,10 +135,12 @@ class KodiBox:
             log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
 
     def start_playback(self, link):
+        log_message(f"Starting playback of link {link} on Kodi box with IP {self.ip}", level=xbmc.LOGERROR)
         # Start playback on the Kodi box
         self._send_jsonrpc_command("Player.Open", {"item": {"file": link}})
 
     def stop_playback(self):
+        log_message(f"Stopping playback on Kodi box with IP {self.ip}", level=xbmc.LOGERROR)
         # Stop playback on the Kodi box
         self._send_jsonrpc_command("Player.Stop", {"playerid": 1})
 
@@ -157,6 +161,7 @@ class KodiBox:
 
 
 def initialize_kodi_boxes():
+    log_message("Initializing Kodi boxes...", level=xbmc.LOGERROR)
     start_port = 49152  # Start of dynamic/private port range
     end_port = 65535    # End of dynamic/private port range
     kodi_boxes = []
@@ -197,6 +202,7 @@ def initialize_kodi_boxes():
         if box.status == "IDLE":
             start_socket_server(box.proxy_port, box.ip, box.server_port)
 
+    log_message("Initialization of Kodi boxes completed.", level=xbmc.LOGERROR)
     return kodi_boxes
 
 
@@ -277,6 +283,7 @@ def stop_kodi_playback(kodi_box):
     kodi_box.mark_idle()
 
 def cleanup_stale_entries():
+    log_message("Cleanup process initiated...", level=xbmc.LOGERROR)
     global active_proxies, active_links, last_accessed_links
     
     while True:
@@ -302,6 +309,7 @@ def cleanup_stale_entries():
         with active_proxies_lock:
             for link in stale_links:
                 if link in active_proxies:
+                    log_message(f"Closing stale proxy for link: {link}", level=xbmc.LOGERROR)
                     active_proxies[link]['encoder_connection'].close()
                     log_message(f"Closing stale proxy {active_proxies[link]['encoder_connection']}", level=xbmc.LOGERROR)
                     active_proxies.pop(link, None)
@@ -320,6 +328,7 @@ def is_kodi_box_playing(kodi_box, link):
 
 
 def handle_client(client_socket, target_host, target_port):
+    log_message(f"Handling client connection on {target_host}:{target_port}", level=xbmc.LOGERROR)
     try:
         with client_socket:
             request_data = client_socket.recv(1024)
@@ -464,6 +473,7 @@ class MyMonitor(xbmc.Monitor):
         self.main_httpd.shutdown()
         
         for proxy_server in PROXY_SERVERS:
+            log_message(f"Shutting down proxy server on port {proxy_server.getsockname()[1]}", level=xbmc.LOGERROR)
             proxy_server.close()  # Shut down the proxy server
         
         self.main_httpd.server_close()
@@ -500,7 +510,7 @@ def run():
             # Monitor for Kodi shutdown or addon disable
             while not monitor.abortRequested():
                 if monitor.waitForAbort(1):
-                    log_message("Kodi abort requested or shutdown signal received. Cleaning up...")
+                    log_message("Shutdown signal received from Kodi.", level=xbmc.LOGERROR)
                     break
 
             # Wait for all tasks to complete
