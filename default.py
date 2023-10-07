@@ -231,16 +231,26 @@ def get_encoder_url_for_link(link, headers={}):
 
 def get_available_kodi_box(link):
     log_message(f"Look for available kodi box with link {link}", level=xbmc.LOGERROR)
-    # Find an available Kodi box
+
+    # Check if link is already playing on a Kodi box
+    if link in active_links:
+        for box in KODI_BOXES:
+            if box.ip == active_links[link]:
+                log_message(f"Link already playing on Kodi box with ip {box.ip}", level=xbmc.LOGERROR)
+                return box
+
+    # Find an available IDLE Kodi box
     for box in KODI_BOXES:
         if box.status == "IDLE":
-            box.mark_playing()  # Mark the box as PLAYING using the method
+            box.mark_playing()  # Mark the box as PLAYING
             if link:
                 active_links[link] = box.ip
             log_message(f"Found available kodi box with ip {box.ip}", level=xbmc.LOGERROR)
             return box
+
     log_message(f"Not Found available kodi box", level=xbmc.LOGERROR)
     return None
+
 
 
 def stop_kodi_playback(kodi_box):
@@ -389,21 +399,20 @@ class MyHandler(BaseHTTPRequestHandler):
         with play_request_lock:
             available_kodi_box = get_available_kodi_box(link)
             if available_kodi_box:
-                # If the link is already playing on a Kodi box, just redirect to its encoder URL
-                log_message(f"Found already playing on a Kodi box, directing to {available_kodi_box.encoder_url}", level=xbmc.LOGERROR)
+                log_message(f"Link already playing on a Kodi box, directing to {available_kodi_box.encoder_url}", level=xbmc.LOGERROR)
                 encoder_url = available_kodi_box.encoder_url
             else:
-                # Else, initiate playback on a Kodi box and then redirect
                 available_kodi_box = get_available_kodi_box(None)
                 if available_kodi_box:
                     available_kodi_box.start_playback(link)
-                    log_message(f"Started a new box, redirecting to {available_kodi_box.encoder_url}", level=xbmc.LOGERROR)
+                    log_message(f"Started playback on a new box, redirecting to {available_kodi_box.encoder_url}", level=xbmc.LOGERROR)
                     encoder_url = available_kodi_box.encoder_url
                     with active_links_lock:
                         active_links[link] = available_kodi_box.ip
                 else:
                     self.send_error(503, "All Kodi boxes are in use.")
                     return
+
             with active_links_lock:
                 last_accessed_links[link] = datetime.datetime.now()
             master_kodi_box = get_master_kodi_box()
