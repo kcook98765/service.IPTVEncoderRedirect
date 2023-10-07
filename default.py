@@ -390,8 +390,8 @@ class MyHandler(BaseHTTPRequestHandler):
             available_kodi_box = get_available_kodi_box(link)
             if available_kodi_box:
                 # If the link is already playing on a Kodi box, just redirect to its encoder URL
-                log_message(f"Found already playing on a Kodi box, directing to {available_kodi_box['Encoder_URL']}", level=xbmc.LOGERROR)
-                encoder_url = available_kodi_box['Encoder_URL']
+                log_message(f"Found already playing on a Kodi box, directing to {available_kodi_box.encoder_url}", level=xbmc.LOGERROR)
+                encoder_url = available_kodi_box.encoder_url
             else:
                 # Else, initiate playback on a Kodi box and then redirect
                 available_kodi_box = get_available_kodi_box(None)
