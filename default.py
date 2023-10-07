@@ -343,7 +343,7 @@ def handle_client(client_socket, target_host, target_port):
     log_message(f"Begin handling client request on proxy port {target_port}", level=xbmc.LOGDEBUG)
     try:
         # Determine the Kodi box this request pertains to based on the port
-        kodi_box = next((box for box in KODI_BOXES if box.proxy_port == target_port), None)
+        kodi_box = next((box for box in KODI_BOXES if box.server_port == target_port), None)
         
         if not kodi_box:
             log_message(f"No Kodi box found for port {target_port}", level=xbmc.LOGERROR)
