@@ -500,6 +500,7 @@ MAX_WORKERS = 10  # Adjust this based on the maximum number of simultaneous thre
 def run():
     cleanup_future = None
     main_future = None
+    executor = None
     try:
         log_message("Starting server...")
         
@@ -564,9 +565,11 @@ def run():
                 main_future.cancel()
                 log_message("main_future cancelled.")
 
-            log_message("Shutting down executor...")
-            executor.shutdown(wait=False)
-            log_message("Executor shutdown completed.")
+            if executor:
+                log_message("Shutting down executor...")
+                executor.shutdown(wait=False)
+                log_message("Executor shutdown completed.")
+
 
             log_message("Releasing ports...")
             release_ports([box.proxy_port for box in KODI_BOXES] + [master_kodi_box.server_port])
