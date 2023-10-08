@@ -173,7 +173,7 @@ def initialize_kodi_box(actor, ip_setting, encoder_url_setting, start_port, end_
         return KodiBox(actor, ip_setting, encoder_url_setting, proxy_port, server_port)
 
 def initialize_kodi_boxes():
-    log_error("Initializing Kodi boxes...")
+    log_message("Initializing Kodi boxes...")
     start_port, end_port = 49152, 65535
     kodi_boxes = []
 
@@ -193,7 +193,7 @@ def initialize_kodi_boxes():
         if box.status == "IDLE":
             start_socket_server(box.proxy_port, box.ip, box.server_port)
 
-    log_error("Initialization of Kodi boxes completed.")
+    log_message("Initialization of Kodi boxes completed.")
     return kodi_boxes
 
 
