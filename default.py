@@ -1,11 +1,12 @@
 import xbmc, xbmcaddon, xbmcvfs, xbmcgui
-import os, json, time, threading, datetime, socket
+import os, json, time, threading, datetime
 import traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, parse_qs, quote, unquote
+from urllib.parse import urlparse, parse_qs, unquote
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 from concurrent.futures import ThreadPoolExecutor
+import socket
 
 ADDON = xbmcaddon.Addon()
 ENABLE_LOGGING = True # FALSE to shut off
@@ -39,32 +40,24 @@ def send_jsonrpc(kodi_url, payload=None):
     if payload is None:
         payload = {}
 
+    headers = {'Content-Type': 'application/json'}
+    request_data = json.dumps(payload).encode('utf-8')
+    
+    # If it's a local Kodi, set the appropriate URL
     if kodi_url == "local":
-        log_message("Send JSONRPC to local kodi", level=xbmc.LOGERROR)
-        try:
-            command = json.dumps(payload)
-            response_json = xbmc.executeJSONRPC(command)
-            log_message(f"Received JSON-RPC response: {response_json}", level=xbmc.LOGDEBUG)
-            return json.loads(response_json)
-        except Exception as e:
-            log_message(f"Error sending JSON-RPC to local Kodi: {str(e)}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
-            # You can log additional error information or handle the error as needed.
-            return None
-    else:
-        log_message(f"Send JSONRPC to remote kodi: {kodi_url}", level=xbmc.LOGERROR)
-        try:
-            request_url = f"{kodi_url}/jsonrpc"
-            request_data = json.dumps(payload).encode('utf-8')
-            request_headers = {'Content-Type': 'application/json'}
-            log_message(f"Sending HTTP request to {request_url} with headers: {request_headers} and data: {request_data}", level=xbmc.LOGDEBUG)
-            request = Request(request_url, data=request_data, headers={'Content-Type': 'application/json'})
-            response = urlopen(request)
-            response_json = response.read().decode('utf-8')
-            return json.loads(response_json)
-        except Exception as e:
-            log_message(f"Error sending JSON-RPC to remote Kodi '{kodi_url}' : {str(e)}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
-            # You can log additional error information or handle the error as needed.
-            return None
+        kodi_url = "http://localhost:8080"
+
+    log_message(f"Send JSONRPC to Kodi: {kodi_url} with payload: {request_data.decode('utf-8')}", level=xbmc.LOGERROR)
+    try:
+        request_url = f"{kodi_url}/jsonrpc"
+        request = Request(request_url, data=request_data, headers=headers)
+        response = urlopen(request)
+        response_json = response.read().decode('utf-8')
+        return json.loads(response_json)
+    except Exception as e:
+        log_message(f"Error sending JSON-RPC to Kodi '{kodi_url}' : {str(e)}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
+        raise Exception("JSON-RPC Error: " + str(e))
+
 
 
 def find_available_port(start_port, end_port):
@@ -103,8 +96,8 @@ def start_socket_server(proxy_port, target_host, target_port):
         log_message(f"Server socket bound to Port: {proxy_port}", level=xbmc.LOGDEBUG)
         ACTIVE_SOCKETS[proxy_port] = server_socket
         server_socket.listen(5)
-        log_message(f"Append {proxy_port} to PROXY_SERVERS", level=xbmc.LOGDEBUG)
-        PROXY_SERVERS.append(proxy_port)
+        log_message(f"Append {server_socket} to PROXY_SERVERS", level=xbmc.LOGDEBUG)
+        PROXY_SERVERS.append(server_socket)
         log_message(f"Raw socket server initialized and listening on port {proxy_port}", level=xbmc.LOGDEBUG)
 
         while not shutdown_socket_server_event.is_set():
@@ -112,7 +105,9 @@ def start_socket_server(proxy_port, target_host, target_port):
             log_message(f"Accepted proxy connection from {addr[0]}:{addr[1]}", level=xbmc.LOGDEBUG)
             threading.Thread(target=handle_client, args=(client_socket, target_host, target_port)).start()
 
-    threading.Thread(target=socket_server_loop).start()
+    thread = threading.Thread(target=socket_server_loop)
+    thread.start()
+    return thread
 
 class KodiBox:
     def __init__(self, actor, ip, encoder_url, proxy_port, server_port):
@@ -155,61 +150,50 @@ class KodiBox:
         shutdown_socket_server_event.set()
         if self.socket_server_thread and self.socket_server_thread.is_alive():
             self.socket_server_thread.join()
+        self.cleanup_socket_server_thread()
 
     def mark_idle(self):
         self.status = "IDLE"
         # Call the module-level start_socket_server function
-        start_socket_server(self.proxy_port, self.ip, self.server_port)
+        self.socket_server_thread = start_socket_server(self.proxy_port, self.ip, self.server_port)
 
     def mark_playing(self):
         self.status = "PLAYING"
         self.stop_socket_server()
 
+    def cleanup_socket_server_thread(self):
+        if self.socket_server_thread and not self.socket_server_thread.is_alive():
+            self.socket_server_thread = None
+
+def initialize_kodi_box(actor, ip_setting, encoder_url_setting, start_port, end_port):
+    proxy_port = find_available_port(start_port, end_port)
+    if proxy_port:
+        server_port = None if actor != "Master" else int(ADDON.getSetting('server_port'))
+        log_message(f"Setup {actor} {ip_setting} using encoder {encoder_url_setting} with local proxy port {proxy_port}")
+        return KodiBox(actor, ip_setting, encoder_url_setting, proxy_port, server_port)
 
 def initialize_kodi_boxes():
-    log_message("Initializing Kodi boxes...", level=xbmc.LOGERROR)
-    start_port = 49152  # Start of dynamic/private port range
-    end_port = 65535    # End of dynamic/private port range
+    log_error("Initializing Kodi boxes...")
+    start_port, end_port = 49152, 65535
     kodi_boxes = []
 
-    # Master Kodi instance
-    master_proxy_port = find_available_port(start_port, end_port)
-    if master_proxy_port is None:
-        log_message("No available port found for Master Kodi proxy.", level=xbmc.LOGERROR)
-    else:
-        master_server_port = ADDON.getSetting('server_port')
-        try:
-            master_server_port = int(master_server_port)  # Convert to integer
-        except ValueError:
-            log_message("Invalid master_server_port setting. Please provide a valid numeric port.", level=xbmc.LOGERROR)
-            master_server_port = None
+    master_kodi_box = initialize_kodi_box("Master", xbmc.getIPAddress(), ADDON.getSetting('master_encoder_url'), start_port, end_port)
+    if master_kodi_box:
+        kodi_boxes.append(master_kodi_box)
 
-        if master_server_port is not None:
-            master_encoder_url = ADDON.getSetting('master_encoder_url')
-            master_kodi_box = KodiBox("Master", xbmc.getIPAddress(), master_encoder_url, master_proxy_port, master_server_port)
-            kodi_boxes.append(master_kodi_box)
-
-    # Slave Kodi instance(s)
-    for i in range(1, 4):  # Adjust the range according to the number of slave settings in your settings.xml
-        ip_setting = ADDON.getSetting(f"slave_{i}_ip")
-        encoder_url_setting = ADDON.getSetting(f"slave_{i}_encoder_url")
-        
-        # Check if the IP setting is not "0.0.0.0" before adding the slave Kodi box
+    for i in range(1, 4):
+        ip_setting, encoder_url_setting = ADDON.getSetting(f"slave_{i}_ip"), ADDON.getSetting(f"slave_{i}_encoder_url")
         if ip_setting and ip_setting != "0.0.0.0" and encoder_url_setting:
-            slave_proxy_port = find_available_port(start_port, end_port)
-            if slave_proxy_port is None:
-                log_message(f"No available port found for Slave {i} Kodi proxy.", level=xbmc.LOGERROR)
-            else:
-                log_message(f"Setup slave {ip_setting} using encoder {encoder_url_setting} with local proxy port {slave_proxy_port}")
-                slave_kodi_box = KodiBox(f"Slave {i}", ip_setting, encoder_url_setting, slave_proxy_port, None)  # Create KodiBox instance
+            slave_kodi_box = initialize_kodi_box(f"Slave {i}", ip_setting, encoder_url_setting, start_port, end_port)
+            if slave_kodi_box:
                 kodi_boxes.append(slave_kodi_box)
 
     for box in kodi_boxes:
-        log_message(f"Initialized Kodi box with IP: {box.ip}, Proxy Port: {box.proxy_port}, Server port: {box.server_port}", level=xbmc.LOGDEBUG)
+        log_message(f"Initialized Kodi box with IP: {box.ip}, Proxy Port: {box.proxy_port}, Server port: {box.server_port}")
         if box.status == "IDLE":
             start_socket_server(box.proxy_port, box.ip, box.server_port)
 
-    log_message("Initialization of Kodi boxes completed.", level=xbmc.LOGERROR)
+    log_error("Initialization of Kodi boxes completed.")
     return kodi_boxes
 
 
@@ -230,51 +214,28 @@ def get_master_kodi_box():
             return box
     return None
 
-def get_encoder_url_for_link(link, headers={}):
-    log_message(f"Lookup encoder url for link {link}", level=xbmc.LOGERROR)
-    with active_links_lock:
-        kodi_ip = active_links.get(link)
-        if kodi_ip:
-            for box in KODI_BOXES:
-                if box.ip == kodi_ip:
-                    encoder_url = box.encoder_url
-                    with urlopen(Request(encoder_url, headers=headers)) as response:  # Ensure the connection is closed
-                        return response
-    log_message(f"Could not find Encoder_URL for link {link}", level=xbmc.LOGERROR)
-    return None  # or some default encoder URL if you have one
-
 
 def get_available_kodi_box(link):
     log_message(f"Look for available kodi box with link {link}", level=xbmc.LOGERROR)
 
     # Check if link is already playing on a Kodi box
     if link in active_links:
-        log_message(f"link : {link} found in active_links")
         for box in KODI_BOXES:
-            log_message(f"Checking Kodi box with ip {box.ip}")
             if box.ip == active_links[link]:
                 log_message(f"Link already playing on Kodi box with ip {box.ip}", level=xbmc.LOGERROR)
                 return box
-            else:
-                log_message(f"No match found for box with ip {box.ip}")
-    else:
-        log_message(f"link : {link} NOT found in active_links")
 
-    log_message("Check for IDLE boxes")
-    # Find an available IDLE Kodi box
+    # If not, find an available IDLE Kodi box
     for box in KODI_BOXES:
-        log_message(f"Checking Kodi box with ip {box.ip}")
         if box.status == "IDLE":
-            log_message(f"Kodi box with ip {box.ip} is IDLE")
-            box.mark_playing()  # Mark the box as PLAYING
+            box.mark_playing()
             if link is not None and link != "":
-                log_message(f"Assign active_links with link {link} to kodi IP {box.ip}")
                 active_links[link] = box.ip
-            log_message(f"Found available kodi box with ip {box.ip}", level=xbmc.LOGERROR)
             return box
 
     log_message(f"Not Found available kodi box", level=xbmc.LOGERROR)
     return None
+
 
 
 
@@ -343,7 +304,7 @@ def is_kodi_box_playing(kodi_box, link):
 def handle_client(client_socket, target_host, target_port):
     log_message(f"Begin handling client request on proxy port {target_port}", level=xbmc.LOGDEBUG)
     try:
-        # Determine the Kodi box this request pertains to based on the port
+        # Determine the Kodi box this request pertains to based on the target_port
         kodi_box = next((box for box in KODI_BOXES if box.server_port == target_port), None)
         
         if not kodi_box:
@@ -451,29 +412,12 @@ class MyHandler(BaseHTTPRequestHandler):
         log_message(f"Received play request for link {link}", level=xbmc.LOGERROR)
         with play_request_lock:
             available_kodi_box = get_available_kodi_box(link)
-            if available_kodi_box:
-                # Check if the Kodi box is actually playing the content
-                active_players = available_kodi_box._send_jsonrpc_command("Player.GetActivePlayers", {})
-                
-                if not active_players:
-                    log_message(f"No active players found on Kodi box {available_kodi_box.ip}. Sending play request.", level=xbmc.LOGERROR)
-                    available_kodi_box.start_playback(link)
-                    
-                elif link in active_links and active_links[link] == available_kodi_box.ip:
-                    # The link is already being played on the available Kodi box
-                    log_message(f"Link already playing on a Kodi box, directing to {available_kodi_box.encoder_url}", level=xbmc.LOGERROR)
-                else:
-                    # The link is not being played on the available Kodi box, start playback
-                    available_kodi_box.start_playback(link)
-                    log_message(f"Started playback on a new box, redirecting to {available_kodi_box.encoder_url}", level=xbmc.LOGERROR)
-                    with active_links_lock:
-                        active_links[link] = available_kodi_box.ip
-            else:
+            if not available_kodi_box:
                 self.send_error(503, "All Kodi boxes are in use.")
                 return
-
+            
+            # First, send the client to the encoder URL
             encoder_url_path = urlparse(available_kodi_box.encoder_url).path
-
             with active_links_lock:
                 last_accessed_links[link] = datetime.datetime.now()
             master_kodi_box = get_master_kodi_box()
@@ -481,12 +425,16 @@ class MyHandler(BaseHTTPRequestHandler):
                 raise Exception("Master Kodi box not found!")
             encoder_path = urlparse(available_kodi_box.encoder_url).path
             proxy_url = f"http://{master_kodi_box.ip}:{master_kodi_box.proxy_port}{encoder_path}"
-            
             log_message(f"Sending client to proxy URL: {proxy_url}", level=xbmc.LOGERROR)
-    
             self.send_response(302)
             self.send_header('Location', proxy_url)
             self.end_headers()
+            
+            # After redirecting the client, start the playback on the Kodi box
+            available_kodi_box.start_playback(link)
+            with active_links_lock:
+                active_links[link] = available_kodi_box.ip
+
 
 class MyMonitor(xbmc.Monitor):
     def __init__(self, main_httpd):
