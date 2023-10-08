@@ -14,8 +14,6 @@ CLEANUP_INTERVAL_SECONDS = 3600  # This will check for cleanup every hour. Adjus
 MAX_LINK_IDLE_TIME_SECONDS = 3600 * 1  # Remove links that have been idle for 1 hour.
 PROXY_SERVERS = []
 ACTIVE_SOCKETS = {}
-
-# Add an additional dictionary to track the last access time of each link.
 last_accessed_links = {}
 active_links_lock = threading.Lock()
 assigned_ports = []
@@ -56,8 +54,10 @@ def send_jsonrpc(kodi_url, payload=None):
         return json.loads(response_json)
     except Exception as e:
         log_message(f"Error sending JSON-RPC to Kodi '{kodi_url}' : {str(e)}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
+        # Display user-friendly message
+        xbmcgui.Dialog().ok("Error", "Error sending request to Kodi. Please check your Kodi settings for 'Remote' access enabling.")
+        xbmcaddon.Addon().setSetting("enabled", "false")  # Disable the addon
         raise Exception("JSON-RPC Error: " + str(e))
-
 
 
 def find_available_port(start_port, end_port):
@@ -130,9 +130,13 @@ class KodiBox:
         }
         kodi_url = "local" if self.actor == "Master" else f"http://{self.ip}:8080"
         log_message(f"Interacting with Kodi box '{self.actor}' at {kodi_url}", level=xbmc.LOGDEBUG)
-        response_json = send_jsonrpc(kodi_url, payload)
-        if response_json and 'error' in response_json:
-            log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
+        try:
+            response_json = send_jsonrpc(kodi_url, payload)
+            if response_json and 'error' in response_json:
+                log_message(f"Error in JSON-RPC response: {response_json['error']}", level=xbmc.LOGERROR)
+        except Exception as e:
+            # Log the error
+            log_message(f"Error sending JSON-RPC command '{method}' to Kodi at {kodi_url}: {str(e)}", level=xbmc.LOGERROR)
 
     def start_playback(self, link):
         log_message(f"Starting playback of link {link} on Kodi box with IP {self.ip}", level=xbmc.LOGERROR)
@@ -463,7 +467,7 @@ def run():
         # Main server (synchronous)
         master_kodi_box = get_master_kodi_box()
         if not master_kodi_box:
-            xbmcgui.Dialog().ok("Error", "Master Kodi settings not found or set correctly. Addon will be disabled.")
+            xbmcgui.Dialog().ok("Error", "Master Kodi settings not found or set correctly. Addon will be disabled. Renable in settings")
             xbmcaddon.Addon().setSetting("enabled", "false")  # Disable the addon
             return
         
