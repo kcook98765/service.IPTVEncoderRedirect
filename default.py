@@ -367,17 +367,16 @@ def run():
         log_message(f"9193 Main execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
 
     # spin up each encoder/kodi proxy, start with the master
+    port_to_use = find_available_port(start_port, end_port)
+    if not port_to_use:
+        log_message("No available ports found for master encoder!", level=xbmc.LOGERROR)
+        return
     try:
-        port_to_use = find_available_port(start_port, end_port)
-        if not port_to_use:
-            log_message("No available ports found for master encoder!", level=xbmc.LOGERROR)
-            return
-        try:
-            log_message(f"Starting Master encoder proxy on port {port_to_use}.")
-            run_proxy(port_to_use, ADDON.getSetting('master_encoder_url'), '', '', '0.0.0.0')
-            log_message(f"Now serving on port {port_to_use}")
-        except Exception as e:
-            log_message(f"Master proxy port execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
+        log_message(f"Starting Master encoder proxy on port {port_to_use}.")
+        run_proxy(port_to_use, ADDON.getSetting('master_encoder_url'), '', '', '0.0.0.0')
+        log_message(f"Now serving on port {port_to_use}")
+    except Exception as e:
+        log_message(f"Master proxy port execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
   
     # spin up all other slaves per settings
     for i in range(1, 4):
