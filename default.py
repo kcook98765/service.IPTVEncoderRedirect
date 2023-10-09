@@ -1,13 +1,13 @@
 import xbmc, xbmcaddon, xbmcvfs, xbmcgui, xbmcplugin
 import http.server
 import socketserver
-import urllib.request
-from urllib.parse import quote, urlparse
+from urllib.request import urlopen, quote, urlparse
 from urllib.error import URLError
 import time
 import threading
 import traceback
 import json
+import socket
 from base64 import b64encode
 
 ADDON = xbmcaddon.Addon()
