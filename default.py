@@ -1,8 +1,9 @@
 import xbmc, xbmcaddon, xbmcvfs, xbmcgui, xbmcplugin
 import http.server
 import socketserver
-from urllib.request import urlopen, quote, urlparse
+from urllib.request import urlopen, quote, urlparse, Request, urlunparse
 from urllib.error import URLError
+import urllib.parse
 import time
 import threading
 import traceback
@@ -25,19 +26,37 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         url = None
 
+        log_message(f"ProxyHTTPRequestHandler - Path of this request: {self.path}")
+
         if self.path.endswith('.m3u8'):
             log_message("Path ends with .m3u8")
-            if self.server.m3u8_url == 'http://localhost:52104/playlist.m3u8' :
+            if self.server.m3u8_url == 'http://localhost:52104/playlist.m3u8':
                 log_message(f"Master m3u8, processing")
-                self.handle_playlist_request()
+                if self.handle_playlist_request():  # Check if request was handled
+                    return  # Break out early if request was handled
             else:
-                url = self.server.m3u8_url + self.path
+                # Parse both URLs
+                parsed_server_url = urlparse(self.server.m3u8_url)
+                parsed_path = urlparse(self.path)
+                
+                # Create a new URL using the base from server.m3u8_url and path from self.path
+                new_url_parts = (
+                    parsed_server_url.scheme,
+                    parsed_server_url.netloc,
+                    parsed_path.path,
+                    parsed_path.params,
+                    parsed_path.query,
+                    parsed_path.fragment
+                )
+                url = urlunparse(new_url_parts)
+                
                 log_message(f"Not master m3u8, updating URL to: {url}")
         
         elif self.path.endswith('epg.xml'):
             if self.server.epg_url == 'http://localhost:52104/epg.xml':
                 log_message(f"Master EPG, processing")
-                self.handle_epg_request()
+                if self.handle_epg_request():  # Check if request was handled
+                    return  # Break out early if request was handled
             else:
                 url = self.server.epg_url + self.path
                 log_message(f"Not master EPG, updating URL to: {url}")
@@ -45,13 +64,21 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         # If the path matches any of our conditions
         if url:
             try:
-                with urllib.request.urlopen(url) as response:
+                with urlopen(url) as response:
+                    data = response.read()  # store the response data
+                    log_message(f"Content of raw data from URL {url}: {data}")
+                    
+                    # Modify the m3u8 data
+                    parsed_m3u8_url = urlparse(self.server.m3u8_url)
+                    proxy_base_url = f"{parsed_m3u8_url.scheme}://{parsed_m3u8_url.netloc}"
+                    log_message(f"Prefixing the relative urls with {proxy_base_url}")
+                    modified_data = make_ts_urls_absolute(data, proxy_base_url)             
+                    log_message(f"Content of modified data from URL {url}: {modified_data}")
                     self.send_response(response.status)
                     for key, value in response.getheaders():
                         self.send_header(key, value)
                     self.end_headers()
-                    self.wfile.write(response.read())
-                    log_message(f"Successfully fetched data from URL: {url}")
+                    self.wfile.write(modified_data)  # send the modified data to the client
             except:
                 self.server.status = "ERROR"
                 log_message(f"Failed to fetch data from URL: {url}", level=xbmc.LOGERROR)
@@ -70,8 +97,10 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-type', 'application/xml')
             self.end_headers()
             self.wfile.write(content_bytes)  # Write the encoded content as bytes
+            return True  # Request handled successfully
         except URLError as e:
             self.handle_error(f"Unexpected error: {e}")
+            return False  # Request handling failed
 
     def handle_playlist_request(self):
         log_message("Received request for playlist.")
@@ -82,8 +111,11 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-type', 'application/vnd.apple.mpegurl')
             self.end_headers()
             self.wfile.write(transformed_content.encode())
+            return True  # Request handled successfully
         except Exception as e:
             self.handle_error(e)
+            return False  # Request handling failed
+
 
     def transform_playlist_content(self, content):
         lines = content.split('\n')
@@ -91,7 +123,7 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         for line in lines:
             if line.startswith('plugin://'):
                 encoded_line = quote(line, safe='')
-                new_url = f"http://{xbmc.getIPAddress()}:{self.server.server_address[1]}/play?link={encoded_line}"
+                new_url = f"http://{xbmc.getIPAddress()}:9191/play?link={encoded_line}"
                 new_lines.append(new_url)
             else:
                 new_lines.append(line)
@@ -103,16 +135,19 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def handle_error(self, e):
         log_message(f"HTTP request handling error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
-        self.send_response(500)
-        self.send_header('Content-Type', 'text/plain')
-        self.end_headers()
-        self.wfile.write(str(e).encode())
+        try:
+            self.send_response(500)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(str(e).encode())
+        except BrokenPipeError:
+            log_message("Broken pipe error while handling another error.", level=xbmc.LOGERROR)
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     last_activity = time.time()
     daemon_threads = True
 
-    def __init__(self, server_address, handler, m3u8_url, epg_url, link, kodi_ip):
+    def __init__(self, server_address, handler, m3u8_url, epg_url, link, kodi_ip, name):
         log_message("Initializing ThreadedTCPServer.")
         super().__init__(server_address, handler)
         self.m3u8_url = m3u8_url
@@ -120,11 +155,12 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
         self.link = link
         self.kodi_ip = kodi_ip
         self.status = "IDLE"
-        if self.m3u8_url == "" and self.epg_url == "":
-            log_message("Not an EPG or M3U8 proxy, allow auto monitor")
+        self.name = name
+        if "Encoder" in self.name:
+            log_message("Encoder detected, allow auto monitor")
             self.start_monitoring()  # Start monitoring when the server is created
         else:
-            log_message("Is an EPG or M3U8 proxy, do not auto monitor")
+            log_message("Is an EPG or M3U8 proxy, no auto monitor needed")
 
     def start_monitoring(self):
         def monitor():
@@ -166,17 +202,18 @@ class KodiJsonRPC:
             "Authorization": f"Basic {self.auth}"
         }
 
-        req = urllib.request.Request(self.base_url, data=json.dumps(payload).encode(), headers=headers)
-        with urllib.request.urlopen(req) as response:
+        req = Request(self.base_url, data=json.dumps(payload).encode(), headers=headers)
+        with urlopen(req) as response:
             result = json.loads(response.read())
             log_message(f"Received response from Kodi ({self.base_url}): {result}")
             return result
 
     def play_path(self, path):
-        log_message(f"Attempting to play path: {path}")
+        decoded_path = urllib.parse.unquote(path)
+        log_message(f"Attempting to play path: {decoded_path}")
         params = {
             "item": {
-                "file": path
+                "file": decoded_path
             }
         }
         return self._send_command("Player.Open", params)
@@ -216,18 +253,21 @@ class MainHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         
             # Search for a proxy playing this link
             proxy_port = None
+            kodi_ip = None
             for port, details in active_proxies.items():
-                if details['link'] == link and details['status'] == "RUNNING":
+                if "Encoder" in details['name'] and details['link'] == link and details['status'] == "RUNNING":
                     log_message(f"MainHTTPRequestHandler - found active proxy for: {link} on port {port}")
                     proxy_port = port
+                    kodi_ip = details['kodi_ip']
                     break
         
             # If not found, choose an available proxy and update its link and status
             if proxy_port is None:
                 for port, details in active_proxies.items():
-                    if details['status'] != "RUNNING":
+                    if "Encoder" in details['name'] and details['status'] != "RUNNING":
                         log_message(f"MainHTTPRequestHandler - found inactive proxy for: {link} on port {port}")
                         proxy_port = port
+                        kodi_ip = details['kodi_ip']
                         details['link'] = link
                         details['status'] = "RUNNING"
                         # Send the "play" command to the associated Kodi
@@ -239,9 +279,11 @@ class MainHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             if proxy_port:
                 encoder_url = active_proxies[proxy_port]['m3u8_url']  # or whatever attribute is needed
                 # Redirect to encoder_url and initiate Kodi playback
-        
-                kodi_rpc = KodiJsonRPC(kodi_ip=active_proxies[proxy_port]['kodi_ip'])
-                kodi_rpc.play_path(encoder_url)  # assuming this is how you initiate playback
+                proxy_url = f"http://192.168.2.9:{proxy_port}/0.m3u8"
+                log_message(f"MainHTTPRequestHandler - redirect /play request to {proxy_url}")
+                self.send_response(302)
+                self.send_header('Location', proxy_url)
+                self.end_headers()
         
             else:
                 self.send_response(503)
@@ -254,8 +296,8 @@ class MainHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps(active_proxies).encode('utf-8'))
-            log_message("Received /status endpoint request.")
+            cleaned_data = {key: make_serializable(val) for key, val in active_proxies.items()}
+            self.wfile.write(json.dumps(cleaned_data).encode('utf-8'))
         
         else:
             self.send_response(404)
@@ -271,6 +313,46 @@ class GracefulKodiMonitor(xbmc.Monitor):
 
     def onAbortRequested(self):
         self.cleanup_callback()
+
+def make_ts_urls_absolute(data, base_url):
+    lines = data.decode('utf-8').split("\n")
+    new_lines = []
+
+    for line in lines:
+        if line.endswith('.ts'):
+            new_lines.append(f"{base_url}/{line}")
+        else:
+            new_lines.append(line)
+    
+    return '\n'.join(new_lines).encode('utf-8')
+
+def make_serializable(data_dict):
+    new_dict = {}
+    for key, value in data_dict.items():
+        if isinstance(value, threading.Thread):
+            # Convert the thread object into a string representation (e.g., its name)
+            new_dict[key] = str(value)
+        else:
+            new_dict[key] = value
+    return new_dict
+
+
+def is_addon_enabled(addon_id):
+    try:
+        addon = xbmcaddon.Addon(addon_id)
+        return True
+    except RuntimeError:
+        return False
+
+def wait_for_addon(addon_id, timeout=60):
+    end_time = time.time() + timeout
+    while time.time() < end_time:
+        if is_addon_enabled(addon_id):
+            return True
+        xbmc.log(f"Waiting for addon {addon_id} to be enabled...", level=xbmc.LOGDEBUG)
+        time.sleep(5)  # wait for 5 seconds before checking again
+    return False
+
 
 def cleanup():
     global active_proxies, httpd
@@ -289,17 +371,18 @@ def cleanup():
     log_message("All proxy servers terminated.")
     log_message("Cleanup completed.")
 
-def run_proxy(port, m3u8_url, epg_url, link, kodi_ip):
+def run_proxy(port, m3u8_url, epg_url, link, kodi_ip, name):
     log_message(f"Starting proxy on port {port} for Kodi IP: {kodi_ip}")
-    server = ThreadedTCPServer(("", port), ProxyHTTPRequestHandler, m3u8_url, epg_url, link, kodi_ip)
+    server = ThreadedTCPServer(("", port), ProxyHTTPRequestHandler, m3u8_url, epg_url, link, kodi_ip, name)
     server_thread = threading.Thread(target=server.serve_forever)
     server_thread.start()
     active_proxies[port] = {
+        "name": name,
         "m3u8_url": m3u8_url,
         "epg_url": epg_url,
         "link": link,
         "kodi_ip": kodi_ip,
-        "status": "RUNNING",  # or any initial status you prefer
+        "status": "IDLE",  # or any initial status you prefer
         "thread": server_thread
     }
     return server
@@ -338,6 +421,52 @@ def run():
     log_message("Start up monitor for any shutdown requests.")
     monitor = GracefulKodiMonitor(cleanup)
     
+    # Start main proxy m3u8 server on port 9192
+    try:
+        log_message("Starting main proxy m3u8 server on port 9192.")
+        run_proxy(9192, 'http://localhost:52104/playlist.m3u8', '', '', '0.0.0.0', 'Main M3U8 Server')
+        log_message("Now serving on port 9192")
+
+    except Exception as e:
+        log_message(f"9192 Main execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
+
+    # Start main proxy epg.xml server on port 9193
+    try:
+        log_message("Starting main proxy epg.xml server on port 9193.")
+        run_proxy(9193, '', 'http://localhost:52104/epg.xml', '', '0.0.0.0', 'Main EPG Server')
+        log_message("Now serving on port 9193")
+
+    except Exception as e:
+        log_message(f"9193 Main execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
+
+    # Spin up the master encoder
+    port_to_use = find_available_port(start_port, end_port)
+    if not port_to_use:
+        log_message("No available ports found for master encoder!", level=xbmc.LOGERROR)
+        return
+    try:
+        log_message(f"Starting Master encoder proxy on port {port_to_use}.")
+        run_proxy(port_to_use, ADDON.getSetting('master_encoder_url'), '', '', '0.0.0.0', 'Master Kodi Encoder server')
+        log_message(f"Now serving on port {port_to_use}")
+    except Exception as e:
+        log_message(f"Master proxy port execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
+  
+    # Spin up all other slaves per settings
+    for i in range(1, 4):
+        ip_setting, encoder_url_setting = ADDON.getSetting(f"slave_{i}_ip"), ADDON.getSetting(f"slave_{i}_encoder_url")
+        if ip_setting and ip_setting != "0.0.0.0" and encoder_url_setting:
+            port_to_use = find_available_port(start_port, end_port)  # Another example range
+            if not port_to_use:
+                log_message(f"No available ports found for Slave {i} encoder!", level=xbmc.LOGERROR)
+                continue
+            try:
+                log_message(f"Starting Slave {i} encoder proxy on port {port_to_use}.")
+                run_proxy(port_to_use, encoder_url_setting, '', '', ip_setting, f'Slave Kodi Encoder server {i}')
+                log_message(f"Now serving on port {port_to_use}")
+            except Exception as e:
+                log_message(f"Slave {i} proxy execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
+
+    # Finally, start the main server
     try:
         log_message("Starting main server on port 9191.")
         httpd = socketserver.TCPServer(("", 9191), MainHTTPRequestHandler)
@@ -350,50 +479,12 @@ def run():
     except Exception as e:
         log_message(f"9191 Main execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
 
-    try:
-        log_message("Starting main proxy m3u8 server on port 9192.")
-        run_proxy(9192, 'http://localhost:52104/playlist.m3u8', '', '', '0.0.0.0')
-        log_message("Now serving on port 9192")
-
-    except Exception as e:
-        log_message(f"9192 Main execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
-
-    try:
-        log_message("Starting main proxy epg.xml server on port 9193.")
-        run_proxy(9193, '', 'http://localhost:52104/epg.xml', '', '0.0.0.0')
-        log_message("Now serving on port 9193")
-
-    except Exception as e:
-        log_message(f"9193 Main execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
-
-    # spin up each encoder/kodi proxy, start with the master
-    port_to_use = find_available_port(start_port, end_port)
-    if not port_to_use:
-        log_message("No available ports found for master encoder!", level=xbmc.LOGERROR)
-        return
-    try:
-        log_message(f"Starting Master encoder proxy on port {port_to_use}.")
-        run_proxy(port_to_use, ADDON.getSetting('master_encoder_url'), '', '', '0.0.0.0')
-        log_message(f"Now serving on port {port_to_use}")
-    except Exception as e:
-        log_message(f"Master proxy port execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
-  
-    # spin up all other slaves per settings
-    for i in range(1, 4):
-        ip_setting, encoder_url_setting = ADDON.getSetting(f"slave_{i}_ip"), ADDON.getSetting(f"slave_{i}_encoder_url")
-        if ip_setting and ip_setting != "0.0.0.0" and encoder_url_setting:
-            port_to_use = find_available_port(start_port, end_port)  # Another example range
-            if not port_to_use:
-                log_message(f"No available ports found for Slave {i} encoder!", level=xbmc.LOGERROR)
-                continue
-            try:
-                log_message(f"Starting Slave {i} encoder proxy on port {port_to_use}.")
-                run_proxy(port_to_use, encoder_url_setting, '', '', ip_setting)
-                log_message(f"Now serving on port {port_to_use}")
-            except Exception as e:
-                log_message(f"Slave {i} proxy execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
 
 if __name__ == '__main__':
-    log_message("Starting application...")
-    run()
-    log_message("Application terminated.")
+    if wait_for_addon('plugin.program.iptv.merge'):
+        xbmc.log("plugin.program.iptv.merge is enabled, starting my addon...", level=xbmc.LOGDEBUG)
+        log_message("Starting application...")
+        run()
+        log_message("Application terminated.")
+    else:
+        xbmc.log("plugin.program.iptv.merge did not start in time. Exiting.", level=xbmc.LOGERROR)
