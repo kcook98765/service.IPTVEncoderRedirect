@@ -1,4 +1,4 @@
-import xbmc, xbmcaddon, xbmcvfs, xbmcgui, xbmcplugin
+import xbmc, xbmcaddon
 import http.server
 import socketserver
 from urllib.request import urlopen, quote, urlparse, Request, urljoin
@@ -56,6 +56,9 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Location', redirect_url)
             self.end_headers()
 
+    def log_message(self, format, *args):
+        pass
+
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     last_activity = time.time()
     daemon_threads = True
@@ -97,6 +100,28 @@ class KodiJsonRPC:
         self.base_url = f"http://{kodi_ip}:{kodi_port}/jsonrpc"
         self.kodi_ip = kodi_ip
         self.auth = b64encode(f"{username}:{password}".encode()).decode('utf-8')
+
+    def is_busy_dialog_active(self):
+        log_message("Checking if busy dialog is active.")
+        params = {
+            "booleans": ["Window.IsActive(busydialog)"]
+        }
+        response = self._send_command("XBMC.GetInfoBooleans", params)
+        return response.get('result', {}).get('Window.IsActive(busydialog)', False)
+
+    def close_busy_dialog(self):
+        # If you determine the busy dialog is open, you might want to send a "back" 
+        # action to close it. Note that doing so might have other unintended effects 
+        # depending on what's causing the busy dialog.
+        log_message("Sending back action to close busy dialog.")
+        self._send_command("Input.Back")
+
+    def safe_play_path(self, path):
+        if self.is_busy_dialog_active():
+            log_message("Busy dialog is active. Attempting to close.")
+            self.close_busy_dialog()
+            time.sleep(2)  # Give Kodi a moment to process the 'back' action.
+        self.play_path(path)
 
     def _send_command(self, method, params={}):
         log_message(f"Sending command {method} with parameters: {params}")
@@ -193,7 +218,7 @@ class MainHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                         # Send the "play" command to the associated Kodi
                         log_message(f"MainHTTPRequestHandler - sending kodi {details['kodi_ip']} a play command for {link} on port {port}")
                         kodi_rpc = KodiJsonRPC(kodi_ip=details['kodi_ip'])
-                        kodi_rpc.play_path(link)
+                        kodi_rpc.safe_play_path(link)
                         break
         
             if proxy_port:
@@ -281,14 +306,13 @@ class MainHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         response = urlopen(url)
         return response.read().decode('utf-8')
 
-class GracefulKodiMonitor(xbmc.Monitor):
-    def __init__(self, cleanup_callback):
-        super(GracefulKodiMonitor, self).__init__()
-        self.cleanup_callback = cleanup_callback
+    def log_message(self, format, *args):
+        pass
 
+class GracefulKodiMonitor(xbmc.Monitor):
     def onAbortRequested(self):
         log_message("Shutdown requested by Kodi. Starting cleanup process...", level=xbmc.LOGNOTICE)
-        self.cleanup_callback()
+        cleanup()
 
 def make_serializable(data_dict):
     new_dict = {}
@@ -302,19 +326,19 @@ def make_serializable(data_dict):
 
 
 def wait_for_addon(addon_id, timeout=120):
-    xbmc.log(f"Check for addon {addon_id} to see if it is running", level=xbmc.LOGDEBUG)
+    log_message(f"Check for addon {addon_id} to see if it is running", level=xbmc.LOGDEBUG)
     end_time = time.time() + timeout
     while time.time() < end_time:
         try:
             addon = xbmcaddon.Addon(addon_id)
-            xbmc.log(f"Looks like {addon_id} is running", level=xbmc.LOGDEBUG)
+            log_message(f"Looks like {addon_id} is running", level=xbmc.LOGDEBUG)
             return True
         except RuntimeError:
             pass  # Ignore the error and continue to wait
         
-        xbmc.log(f"Waiting for addon {addon_id} to be enabled...", level=xbmc.LOGDEBUG)
+        log_message(f"Waiting for addon {addon_id} to be enabled...", level=xbmc.LOGDEBUG)
         time.sleep(5)  # wait for 5 seconds before checking again
-    xbmc.log(f"Waited for over {timeout} seconds for addon {addon_id}. Bailing out.", level=xbmc.LOGERROR)
+    log_message(f"Waited for over {timeout} seconds for addon {addon_id}. Bailing out.", level=xbmc.LOGERROR)
     return False
 
 
@@ -394,7 +418,7 @@ def run():
     
     # Initialize the GracefulKodiMonitor
     log_message("Start up monitor for any shutdown requests.")
-    monitor = GracefulKodiMonitor(cleanup)
+    monitor = GracefulKodiMonitor()
 
     # Spin up the master encoder
     port_to_use = find_available_port(start_port, end_port)
@@ -428,7 +452,9 @@ def run():
         log_message("Starting main server on port 9191.")
         httpd = socketserver.TCPServer(("", 9191), MainHTTPRequestHandler)
         log_message("Now serving on port 9191")
-        while not monitor.waitForAbort(1):  # Check every second
+        while not monitor.abortRequested():
+            if monitor.waitForAbort(1):  # Check every 1 second
+                break
             httpd.handle_request()  # handle one request at a time
 
         log_message("Abort detected by Kodi. Stopping main loop...", level=xbmc.LOGNOTICE)
@@ -440,9 +466,9 @@ def run():
 
 if __name__ == '__main__':
     if wait_for_addon('plugin.program.iptv.merge'):
-        xbmc.log("plugin.program.iptv.merge is enabled, starting my addon...", level=xbmc.LOGDEBUG)
+        log_message("plugin.program.iptv.merge is enabled, starting my addon...", level=xbmc.LOGDEBUG)
         log_message("Starting application...")
         run()
         log_message("Application terminated.")
     else:
-        xbmc.log("plugin.program.iptv.merge did not start in time. Exiting.", level=xbmc.LOGERROR)
+        log_message("plugin.program.iptv.merge did not start in time. Exiting.", level=xbmc.LOGERROR)
