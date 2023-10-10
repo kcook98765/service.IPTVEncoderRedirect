@@ -1,7 +1,7 @@
 <?xml version="1.0" ?>
 <settings version="1">
-    <section id="service.IPTVEncoderRedirect">
-        <category id="general" label="General" help="">
+    <section id="service.IPTVEncoderRedirect" label="IPTV Encoder Redirect Settings">
+        <category id="general" label="General Settings" help="Configure the general settings for IPTV Encoder Redirect.">
             <group id="1" label="Master">
                 <setting id="master_ip" type="string" label="Master IP" help="Enter the IP address of the master Kodi server.">
                     <level>0</level>

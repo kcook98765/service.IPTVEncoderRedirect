@@ -16,6 +16,7 @@ ENABLE_LOGGING = True # FALSE to shut off
 assigned_ports = []
 start_port, end_port = 49152, 65535
 active_proxies = {}
+SERVER_PORT = ADDON.getSettingInt('server_port')
 
 class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
@@ -175,7 +176,7 @@ class KodiJsonRPC:
         self._send_command("System.Reboot")
 
 class MainHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
-    # This handler will process the incoming requests on port 9191
+    # This handler will process the incoming requests on port SERVER_PORT
     
     def do_GET(self):
         log_message(f"MainHTTPRequestHandler - Handling GET request for path: {self.path}")
@@ -296,7 +297,7 @@ class MainHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         for line in lines:
             if line.startswith('plugin://'):
                 encoded_line = quote(line, safe='')
-                new_url = f"http://{xbmc.getIPAddress()}:9191/play?link={encoded_line}"
+                new_url = f"http://{xbmc.getIPAddress()}:{SERVER_PORT}/play?link={encoded_line}"
                 new_lines.append(new_url)
             else:
                 new_lines.append(line)
@@ -449,9 +450,9 @@ def run():
 
     # Finally, start the main server
     try:
-        log_message("Starting main server on port 9191.")
-        httpd = socketserver.TCPServer(("", 9191), MainHTTPRequestHandler)
-        log_message("Now serving on port 9191")
+        log_message(f"Starting main server on port {SERVER_PORT}.")
+        httpd = socketserver.TCPServer(("", SERVER_PORT), MainHTTPRequestHandler)
+        log_message(f"Now serving on port {SERVER_PORT}")
         while not monitor.abortRequested():
             if monitor.waitForAbort(1):  # Check every 1 second
                 break
@@ -461,7 +462,7 @@ def run():
         cleanup()  # explicitly call the cleanup function here
 
     except Exception as e:
-        log_message(f"9191 Main execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
+        log_message(f"port: {SERVER_PORT} Main execution error: {e}\n{traceback.format_exc()}", level=xbmc.LOGERROR)
 
 
 if __name__ == '__main__':
