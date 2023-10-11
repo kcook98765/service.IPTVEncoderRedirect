@@ -1,0 +1,108 @@
+# Kodi IPTV Encoder Redirect Add-on
+# Add-on Name: IPTV Encoder Redirect
+
+msgid ""
+msgstr ""
+"Project-Id-Version: IPTV Encoder Redirect\n"
+"Report-Msgid-Bugs-To: youremail@example.com\n"
+"POT-Creation-Date: YEAR-MONTH-DAY HOUR:MINUTE+TIMEZONE\n"
+"PO-Revision-Date: YEAR-MONTH-DAY HOUR:MINUTE+TIMEZONE\n"
+"Last-Translator: Your Name <youremail@example.com>\n"
+"Language-Team: English\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"Language: en\n"
+
+msgctxt "#30000"
+msgid "IPTV Encoder Redirect Settings"
+msgstr "IPTV Encoder Redirect Settings"
+
+msgctxt "#30001"
+msgid "General Settings"
+msgstr "General Settings"
+
+msgctxt "#30002"
+msgid "Configure the general settings for IPTV Encoder Redirect."
+msgstr "Configure the general settings for IPTV Encoder Redirect."
+
+msgctxt "#30003"
+msgid "Master"
+msgstr "Master"
+
+msgctxt "#30004"
+msgid "Master IP"
+msgstr "Master IP"
+
+msgctxt "#30005"
+msgid "Enter the IP address of the master Kodi server."
+msgstr "Enter the IP address of the master Kodi server."
+
+msgctxt "#30006"
+msgid "Server Port"
+msgstr "Server Port"
+
+msgctxt "#30007"
+msgid "Specify the port number for this main server addon to run on."
+msgstr "Specify the port number for this main server addon to run on."
+
+msgctxt "#30008"
+msgid "Master Encoder URL"
+msgstr "Master Encoder URL"
+
+msgctxt "#30009"
+msgid "Provide the HLS streaming URL for the associated master encoder."
+msgstr "Provide the HLS streaming URL for the associated master encoder."
+
+msgctxt "#30010"
+msgid "Slaves"
+msgstr "Slaves"
+
+msgctxt "#30011"
+msgid "Slave 1 IP"
+msgstr "Slave 1 IP"
+
+msgctxt "#30012"
+msgid "Enter the IP address of the first slave Kodi server."
+msgstr "Enter the IP address of the first slave Kodi server."
+
+msgctxt "#30013"
+msgid "Slave 1 Encoder URL"
+msgstr "Slave 1 Encoder URL"
+
+msgctxt "#30014"
+msgid "Provide the HLS streaming URL for the first associated slave encoder."
+msgstr "Provide the HLS streaming URL for the first associated slave encoder."
+
+msgctxt "#30015"
+msgid "Slave 2 IP"
+msgstr "Slave 2 IP"
+
+msgctxt "#30016"
+msgid "Enter the IP address of the second slave Kodi server."
+msgstr "Enter the IP address of the second slave Kodi server."
+
+msgctxt "#30017"
+msgid "Slave 2 Encoder URL"
+msgstr "Slave 2 Encoder URL"
+
+msgctxt "#30018"
+msgid "Provide the HLS streaming URL for the second associated slave encoder."
+msgstr "Provide the HLS streaming URL for the second associated slave encoder."
+
+msgctxt "#30019"
+msgid "Slave 3 IP"
+msgstr "Slave 3 IP"
+
+msgctxt "#30020"
+msgid "Enter the IP address of the third slave Kodi server."
+msgstr "Enter the IP address of the third slave Kodi server."
+
+msgctxt "#30021"
+msgid "Slave 3 Encoder URL"
+msgstr "Slave 3 Encoder URL"
+
+msgctxt "#30022"
+msgid "Provide the HLS streaming URL for the third associated slave encoder."
+msgstr "Provide the HLS streaming URL for the third associated slave encoder."
