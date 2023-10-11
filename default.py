@@ -224,8 +224,9 @@ class MainHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         
             if proxy_port:
                 encoder_url = active_proxies[proxy_port]['m3u8_url']  # or whatever attribute is needed
+                path = urlparse(encoder_url).path
                 # Redirect to encoder_url and initiate Kodi playback
-                proxy_url = f"http://{xbmc.getIPAddress()}:{proxy_port}/0.m3u8"
+                proxy_url = f"http://{xbmc.getIPAddress()}:{proxy_port}{path}"
                 log_message(f"MainHTTPRequestHandler - redirect /play request to {proxy_url}")
                 self.send_response(302)
                 self.send_header('Location', proxy_url)
