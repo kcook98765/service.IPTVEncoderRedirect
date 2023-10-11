@@ -1,11 +1,20 @@
 # service.IPTVEncoderRedirect
 Middle ware for kodi IPTV Merge.
 
-Using a video encoder (capable of offering HLS streaming) with a Kodi device (or multiple, though not completed testing yet for multiple yet), you can have a tuner/streamer setup to feed a DVR like ChannelsDVR.
+1) You will need at least one kodi device capable of utilizing Widevine DRM:
+https://www.matthuisman.nz/2018/05/kodi-widevine-support.html
+(and can test with the metioned "video test stream addon")
+NOTE: These will be dedicated devices (or just 1 if that is all you need), only for use with encoder, do not add a library, etc, it will not be used for normal kodi thigs, just playback via the addons.
 
-The kodi device should have ability to use Widevine , so that you can view DRM content in the various addons that support it.
+2) A vdieo encoder capable of HLS streaming, like:
+https://www.amazon.com/dp/B07TKMPCZH
 
-This relies on installing IPTV.Merge and any associated addon that is setup to interact with IPTV.merge.
+3) IPTV.Merge found at:
+https://www.matthuisman.nz/2019/02/iptv-merge-kodi-add-on.html
+
+4) HULU (though you should be able to use any IPTV.merge aware addon, and even multiple addons) :
+https://www.matthuisman.nz/2021/10/hulu-kodi-add-on.html
+
 
 I am testing my Hulu Account.
 
@@ -41,7 +50,7 @@ http://__KODI_IP__:__PORT__/epg.xml
 
 If you experiment with multiple kodi servers, you may want to limit the # of streams (in my case HULU only allows 2 concurrent streams).
 
-That is it, onnce DVR has gatherd the data, you should have access.
+That is it, onnce DVR has gathered the data, you should have access.
 
 When you start a video from the DVR, it connects to the addon, the addon checks if a proxy/kodi box is free, initiates the playback and redirects the connection to the proxy url to begin the streaming.
 
@@ -55,6 +64,6 @@ The code also identifies if a new request matches an already running stream, and
 
 But if all proxies are in use, the addon wil send a 503 (All encoders busy!) response.
 
-My next steps are to try running multiple kodi boxes (you do not need the addon on the additional boxes, as the Master one can interact remmoetly with the other boxes to start/stop playback).
+My next steps are to try running multiple kodi boxes (you do not need the addon on the additional boxes, as the Master one can interact remoetly with the other boxes to start/stop playback).
 
 More to come...
